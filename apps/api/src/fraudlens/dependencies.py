@@ -9,7 +9,11 @@ from fraudlens.agents.llm import DeterministicNarrativeGenerator, OpenAINarrativ
 from fraudlens.agents.risk import RiskEngine
 from fraudlens.config import get_settings
 from fraudlens.events import InMemoryEventPublisher, KafkaEventPublisher
+from fraudlens.ingestion import IngestionService
 from fraudlens.orchestrator import InvestigationOrchestrator
+from fraudlens.parsers import EvidenceParser
+from fraudlens.scanner import VirusScanner
+from fraudlens.storage import FilesystemObjectStorage, MinioObjectStorage
 
 
 @lru_cache
@@ -32,4 +36,41 @@ def get_orchestrator() -> InvestigationOrchestrator:
         narrative=narrative,
         publisher=get_publisher(),
         max_steps=settings.max_agent_steps,
+    )
+
+
+@lru_cache
+def get_storage():
+    settings = get_settings()
+    if settings.object_storage_backend == "minio":
+        return MinioObjectStorage(
+            endpoint=settings.object_storage_endpoint,
+            access_key=settings.object_storage_access_key,
+            secret_key=settings.object_storage_secret_key,
+            bucket=settings.object_storage_bucket,
+            secure=settings.object_storage_secure,
+        )
+    return FilesystemObjectStorage(settings.object_storage_root, settings.object_storage_bucket)
+
+
+@lru_cache
+def get_scanner() -> VirusScanner:
+    settings = get_settings()
+    return VirusScanner(
+        enabled=settings.clamav_enabled,
+        required=settings.clamav_required,
+        host=settings.clamav_host,
+        port=settings.clamav_port,
+    )
+
+
+@lru_cache
+def get_ingestion_service() -> IngestionService:
+    return IngestionService(
+        settings=get_settings(),
+        storage=get_storage(),
+        scanner=get_scanner(),
+        parser=EvidenceParser(),
+        publisher=get_publisher(),
+        orchestrator=get_orchestrator(),
     )

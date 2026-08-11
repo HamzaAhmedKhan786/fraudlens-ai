@@ -1,6 +1,6 @@
 import {
   Activity, Bell, ChevronDown, CircleUserRound, FileWarning, Gauge, GitBranch,
-  LayoutDashboard, ListFilter, Search, Settings, ShieldCheck, Sparkles, Users, Workflow,
+  LayoutDashboard, ListFilter, Search, Settings, ShieldCheck, Sparkles, UploadCloud, Users, Workflow,
 } from "lucide-react";
 import Link from "next/link";
 import { getDashboard, type DashboardMetrics } from "@/lib/backend";
@@ -18,7 +18,7 @@ const agents = [
   ["AI investigator", "Evidence-grounded synthesis", "Running", "active"],
 ];
 
-const navPaths: Record<string, string> = { Overview: "/", Cases: "/cases", Investigations: "/investigations", "Entity graph": "/graph", "Agent activity": "/agents", "Detection policies": "/policies", "Model health": "/models", "Team & access": "/team", Settings: "/settings" };
+const navPaths: Record<string, string> = { Overview: "/", Cases: "/cases", "Evidence intake": "/uploads", Investigations: "/investigations", "Entity graph": "/graph", "Agent activity": "/agents", "Detection policies": "/policies", "Model health": "/models", "Team & access": "/team", Settings: "/settings" };
 function NavItem({ icon: Icon, label, active = false }: { icon: typeof Gauge; label: string; active?: boolean }) {
   return <Link href={navPaths[label] ?? "/"} className={`nav-item ${active ? "active" : ""}`}><Icon size={18} /><span>{label}</span></Link>;
 }
@@ -38,6 +38,7 @@ export default async function Dashboard() {
           <p>OPERATIONS</p>
           <NavItem icon={LayoutDashboard} label="Overview" active />
           <NavItem icon={FileWarning} label="Cases" />
+          <NavItem icon={UploadCloud} label="Evidence intake" />
           <NavItem icon={Workflow} label="Investigations" />
           <NavItem icon={GitBranch} label="Entity graph" />
           <p>INTELLIGENCE</p>

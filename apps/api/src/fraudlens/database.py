@@ -2,7 +2,7 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, select
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -35,6 +35,9 @@ class CaseRecord(Base):
         back_populates="case", cascade="all, delete-orphan", lazy="selectin"
     )
     investigations: Mapped[list["InvestigationRecord"]] = relationship(
+        back_populates="case", cascade="all, delete-orphan", lazy="selectin"
+    )
+    uploads: Mapped[list["UploadRecord"]] = relationship(
         back_populates="case", cascade="all, delete-orphan", lazy="selectin"
     )
 
@@ -81,6 +84,38 @@ class AuditRecord(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
     )
+
+
+class UploadRecord(Base):
+    __tablename__ = "uploads"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    case_id: Mapped[str] = mapped_column(ForeignKey("cases.id", ondelete="CASCADE"), index=True)
+    tenant_id: Mapped[str] = mapped_column(String(100), index=True)
+    filename: Mapped[str] = mapped_column(String(255))
+    declared_content_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    detected_content_type: Mapped[str] = mapped_column(String(120))
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64), index=True)
+    storage_bucket: Mapped[str] = mapped_column(String(100))
+    storage_key: Mapped[str] = mapped_column(String(500), unique=True)
+    status: Mapped[str] = mapped_column(String(40), default="RECEIVED", index=True)
+    scan_status: Mapped[str] = mapped_column(String(40), default="PENDING")
+    processing_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    extracted: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    object_available: Mapped[bool] = mapped_column(default=True)
+    retention_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    metadata_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+    case: Mapped[CaseRecord] = relationship(back_populates="uploads")
 
 
 settings = get_settings()

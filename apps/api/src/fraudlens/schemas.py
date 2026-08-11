@@ -107,3 +107,28 @@ class GraphEdge(BaseModel):
 class EntityGraph(BaseModel):
     nodes: list[GraphNode]
     edges: list[GraphEdge]
+
+
+class UploadSummary(BaseModel):
+    id: str
+    case_id: str
+    filename: str
+    declared_content_type: str | None
+    detected_content_type: str
+    size_bytes: int
+    sha256: str
+    status: str
+    scan_status: str
+    processing_attempts: int
+    extracted: dict[str, object]
+    error: str | None
+    object_available: bool
+    retention_expires_at: datetime
+    metadata_expires_at: datetime
+    created_at: datetime
+    updated_at: datetime
+
+
+class UploadList(BaseModel):
+    items: list[UploadSummary]
+    total: int

@@ -1,13 +1,14 @@
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fraudlens.auth import Principal, require_principal
 from fraudlens.database import get_session
-from fraudlens.dependencies import get_orchestrator
+from fraudlens.dependencies import get_ingestion_service, get_orchestrator
 from fraudlens.domain.models import InvestigationReport, InvestigationRequest
+from fraudlens.ingestion import IngestionService
 from fraudlens.orchestrator import InvestigationOrchestrator
 from fraudlens.schemas import (
     AgentStatus,
@@ -21,6 +22,8 @@ from fraudlens.schemas import (
     InvestigationSummary,
     ModelHealth,
     PolicyDefinition,
+    UploadList,
+    UploadSummary,
 )
 from fraudlens.services import (
     add_evidence,
@@ -254,3 +257,44 @@ async def get_model_health(
             detail="No production model has been approved or calibrated.",
         ),
     ]
+
+
+@router.post("/cases/{case_id}/uploads", response_model=UploadSummary, status_code=201)
+async def upload_evidence(
+    case_id: str,
+    file: Annotated[UploadFile, File()],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+    ingestion: Annotated[IngestionService, Depends(get_ingestion_service)],
+) -> UploadSummary:
+    return await ingestion.ingest(session, principal, case_id, file)
+
+
+@router.get("/uploads", response_model=UploadList)
+async def get_uploads(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+    ingestion: Annotated[IngestionService, Depends(get_ingestion_service)],
+    case_id: Annotated[str | None, Query(max_length=100)] = None,
+) -> UploadList:
+    return await ingestion.list(session, principal, case_id)
+
+
+@router.get("/uploads/{upload_id}", response_model=UploadSummary)
+async def get_upload(
+    upload_id: str,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+    ingestion: Annotated[IngestionService, Depends(get_ingestion_service)],
+) -> UploadSummary:
+    return await ingestion.get(session, principal, upload_id)
+
+
+@router.post("/uploads/{upload_id}/retry", response_model=UploadSummary)
+async def retry_upload(
+    upload_id: str,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+    ingestion: Annotated[IngestionService, Depends(get_ingestion_service)],
+) -> UploadSummary:
+    return await ingestion.process(session, principal, upload_id)

@@ -2,7 +2,7 @@
 
 import {
   Activity, Bell, ChevronDown, FileWarning, GitBranch, LayoutDashboard,
-  Search, Settings, ShieldCheck, Sparkles, Users, Workflow,
+  Search, Settings, ShieldCheck, Sparkles, UploadCloud, Users, Workflow,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -10,6 +10,7 @@ import { usePathname } from "next/navigation";
 const sections = [
   { group: "OPERATIONS", items: [
     ["/", "Overview", LayoutDashboard], ["/cases", "Cases", FileWarning],
+    ["/uploads", "Evidence intake", UploadCloud],
     ["/investigations", "Investigations", Workflow], ["/graph", "Entity graph", GitBranch],
   ] },
   { group: "INTELLIGENCE", items: [

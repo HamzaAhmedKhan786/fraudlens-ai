@@ -13,4 +13,5 @@ dist/
 *.db
 *.tsbuildinfo
 .run/
+.data/
 .DS_Store

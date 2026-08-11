@@ -74,3 +74,53 @@ def test_operational_read_models_are_available() -> None:
         ):
             response = client.get(path, headers=HEADERS)
             assert response.status_code == 200, path
+
+
+def test_secure_upload_is_processed_and_deduplicated() -> None:
+    suffix = uuid4().hex[:8]
+    case_id = f"UPLOAD-{suffix}"
+    content = f"trusted evidence {suffix}".encode()
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/v1/cases",
+            headers=HEADERS,
+            json={
+                "id": case_id,
+                "tenant_id": "demo",
+                "subject": "Evidence intake test",
+                "case_type": "Document",
+            },
+        )
+        assert created.status_code == 201
+        first = client.post(
+            f"/api/v1/cases/{case_id}/uploads",
+            headers=HEADERS,
+            files={"file": (f"evidence-{suffix}.txt", content, "text/plain")},
+        )
+        assert first.status_code == 201
+        payload = first.json()
+        assert payload["status"] == "PROCESSED"
+        assert payload["scan_status"] == "SKIPPED"
+        assert payload["extracted"]["text_excerpt"] == content.decode()
+
+        duplicate = client.post(
+            f"/api/v1/cases/{case_id}/uploads",
+            headers=HEADERS,
+            files={"file": (f"copy-{suffix}.txt", content, "text/plain")},
+        )
+        assert duplicate.status_code == 201
+        assert duplicate.json()["id"] == payload["id"]
+
+        listing = client.get(f"/api/v1/uploads?case_id={case_id}", headers=HEADERS)
+        assert listing.status_code == 200
+        assert listing.json()["total"] == 1
+
+
+def test_upload_rejects_unsupported_content() -> None:
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/cases/FR-29482/uploads",
+            headers=HEADERS,
+            files={"file": ("payload.exe", b"MZ-not-an-allowed-file", "application/octet-stream")},
+        )
+        assert response.status_code == 415

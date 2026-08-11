@@ -1,7 +1,11 @@
 import "server-only";
 
-const baseUrl = process.env.FRAUDLENS_API_URL ?? "http://127.0.0.1:8000/api/v1";
+export const backendBaseUrl = process.env.FRAUDLENS_API_URL ?? "http://127.0.0.1:8000/api/v1";
 const apiKey = process.env.FRAUDLENS_API_KEY ?? "fraudlens-local-dev-key";
+
+export function backendAuthHeaders(): Record<string, string> {
+  return { "X-API-Key": apiKey, "X-Tenant-ID": "demo", "X-Actor": "web-console" };
+}
 
 export type CaseSummary = {
   id: string;
@@ -33,16 +37,16 @@ export type ModelHealth = { id: string; name: string; provider: string; status: 
 export type AuditEntry = { id: string; actor: string; action: string; resource_id: string; payload: Record<string, unknown>; created_at: string };
 export type EntityGraph = { nodes: { id: string; label: string; kind: string; risk: number }[]; edges: { source: string; target: string; relation: string }[] };
 export type CaseDetail = CaseSummary & { evidence: { id: string; kind: string; source: string; attributes: Record<string, unknown>; sha256?: string | null }[]; latest_report: { summary: string; citations: string[]; risk: { score: number; severity: string }; findings: { id: string; title: string; explanation: string; confidence: number; severity: string; evidence_ids: string[] }[] } | null };
+export type UploadSummary = { id: string; case_id: string; filename: string; declared_content_type: string | null; detected_content_type: string; size_bytes: number; sha256: string; status: string; scan_status: string; processing_attempts: number; extracted: Record<string, unknown>; error: string | null; object_available: boolean; retention_expires_at: string; metadata_expires_at: string; created_at: string; updated_at: string };
+export type UploadList = { items: UploadSummary[]; total: number };
 
 export async function backendFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${baseUrl}${path}`, {
+  const response = await fetch(`${backendBaseUrl}${path}`, {
     ...init,
     cache: "no-store",
     headers: {
       "Content-Type": "application/json",
-      "X-API-Key": apiKey,
-      "X-Tenant-ID": "demo",
-      "X-Actor": "web-console",
+      ...backendAuthHeaders(),
       ...init.headers,
     },
   });
