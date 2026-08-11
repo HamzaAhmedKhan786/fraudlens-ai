@@ -21,6 +21,10 @@ The repository now contains an executable enterprise foundation:
 - persistent tenant-scoped cases, evidence, investigation reports, and audit events
 - API-key service authentication through a Next.js backend-for-frontend boundary
 - Alembic migrations, agent step budgets, evidence citations, human-review defaults, tests, and CI
+- secure 50 MB evidence intake for EML, PDF, DOCX, TXT, PNG, and JPEG
+- content-signature validation, SHA-256 deduplication, ClamAV quarantine, and MinIO object storage
+- Kafka-backed asynchronous parsing with three-attempt retry/dead-letter handling
+- automated 30-day original-object and 180-day upload-metadata retention enforcement
 
 ### Run locally
 
@@ -37,7 +41,8 @@ npm run dev
 ```
 
 Open `http://localhost:3000` for the analyst console and `http://localhost:8000/docs` for the API.
-Infrastructure can be started with `docker compose up -d postgres redis kafka minio`.
+Infrastructure can be started with `docker compose up -d`. This launches PostgreSQL, Redis, Kafka,
+MinIO, ClamAV, the FastAPI control plane, evidence and retention workers, and the web console.
 
 The local development API key is `fraudlens-local-dev-key`. Replace it through `API_KEY` in every
 shared or deployed environment. The browser never receives this secret; Next.js route handlers
@@ -49,7 +54,11 @@ forward authenticated requests to FastAPI using `FRAUDLENS_API_KEY`.
 POST /api/v1/cases
 POST /api/v1/cases/{case_id}/evidence
 POST /api/v1/cases/{case_id}/investigate
+POST /api/v1/cases/{case_id}/uploads
+POST /api/v1/uploads/{upload_id}/retry
 GET  /api/v1/cases/{case_id}
+GET  /api/v1/uploads
+GET  /api/v1/uploads/{upload_id}
 GET  /api/v1/dashboard
 GET  /api/v1/audit
 GET  /api/v1/investigations
@@ -59,7 +68,7 @@ GET  /api/v1/policies
 GET  /api/v1/models/health
 ```
 
-The analyst console includes routed views for overview, cases and case details, investigations,
+The analyst console includes routed views for overview, secure evidence intake, cases and case details, investigations,
 entity relationships, agent registry, detection policies, model readiness, team access, workspace
 settings, and the audit trail. Case search and severity filters run interactively in the browser.
 

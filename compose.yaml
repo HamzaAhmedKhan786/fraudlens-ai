@@ -47,6 +47,17 @@ services:
     ports: ["9000:9000", "9001:9001"]
     volumes: ["minio_data:/data"]
 
+  clamav:
+    image: clamav/clamav:stable
+    ports: ["3310:3310"]
+    volumes: ["clamav_data:/var/lib/clamav"]
+    healthcheck:
+      test: ["CMD-SHELL", "clamdcheck.sh"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
   api:
     build:
       context: .
@@ -56,10 +67,65 @@ services:
       API_KEY: ${API_KEY:-fraudlens-compose-dev-key}
       KAFKA_ENABLED: "true"
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      PROCESSING_INLINE: "false"
+      OBJECT_STORAGE_BACKEND: minio
+      OBJECT_STORAGE_ENDPOINT: minio:9000
+      OBJECT_STORAGE_ACCESS_KEY: fraudlens
+      OBJECT_STORAGE_SECRET_KEY: fraudlens-dev-password
+      OBJECT_STORAGE_BUCKET: fraudlens-evidence
+      CLAMAV_ENABLED: "true"
+      CLAMAV_REQUIRED: "true"
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: "3310"
     ports: ["8000:8000"]
     depends_on:
       postgres: { condition: service_healthy }
       kafka: { condition: service_started }
+      minio: { condition: service_started }
+      clamav: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  evidence-worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ["python", "-m", "fraudlens.worker"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://fraudlens:fraudlens@postgres:5432/fraudlens
+      KAFKA_ENABLED: "true"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      PROCESSING_INLINE: "false"
+      OBJECT_STORAGE_BACKEND: minio
+      OBJECT_STORAGE_ENDPOINT: minio:9000
+      OBJECT_STORAGE_ACCESS_KEY: fraudlens
+      OBJECT_STORAGE_SECRET_KEY: fraudlens-dev-password
+      OBJECT_STORAGE_BUCKET: fraudlens-evidence
+      CLAMAV_ENABLED: "true"
+      CLAMAV_REQUIRED: "true"
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: "3310"
+    depends_on:
+      api: { condition: service_healthy }
+      kafka: { condition: service_started }
+
+  retention-worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ["python", "-m", "fraudlens.retention"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://fraudlens:fraudlens@postgres:5432/fraudlens
+      OBJECT_STORAGE_BACKEND: minio
+      OBJECT_STORAGE_ENDPOINT: minio:9000
+      OBJECT_STORAGE_ACCESS_KEY: fraudlens
+      OBJECT_STORAGE_SECRET_KEY: fraudlens-dev-password
+      OBJECT_STORAGE_BUCKET: fraudlens-evidence
+    depends_on:
+      api: { condition: service_healthy }
 
   web:
     build:
@@ -75,3 +141,4 @@ volumes:
   postgres_data:
   redis_data:
   minio_data:
+  clamav_data:
