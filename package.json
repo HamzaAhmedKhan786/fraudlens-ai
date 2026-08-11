@@ -1,0 +1,11 @@
+{
+  "name": "fraudlens-ai",
+  "private": true,
+  "workspaces": ["apps/web"],
+  "scripts": {
+    "dev": "npm run dev --workspace @fraudlens/web",
+    "build": "npm run build --workspace @fraudlens/web",
+    "lint": "npm run lint --workspace @fraudlens/web"
+  }
+}
+

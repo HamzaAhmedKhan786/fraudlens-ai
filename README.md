@@ -1,4 +1,73 @@
-# Multimodal Agentic Fraud Intelligence Platform
+<p align="center">
+  <img src="assets/brand/fraudlens-ai-logo.png" alt="FraudLens AI — Detect, Verify, Protect" width="960" />
+</p>
+
+<h1 align="center">Multimodal Agentic Fraud Intelligence Platform</h1>
+
+<p align="center">
+  <strong>Auditable deterministic detection + evidence-grounded LLM investigation.</strong>
+</p>
+
+## Working MVP foundation
+
+The repository now contains an executable enterprise foundation:
+
+- `apps/api` — FastAPI control plane with deterministic email, document, and URL agents
+- `apps/web` — responsive Next.js fraud-operations console
+- deterministic, versioned risk scoring that cannot be overridden by an LLM
+- optional OpenAI narrative generation restricted to cited findings
+- Kafka-compatible investigation-completion events with an in-memory local fallback
+- PostgreSQL, Redis, Kafka, and MinIO development infrastructure
+- persistent tenant-scoped cases, evidence, investigation reports, and audit events
+- API-key service authentication through a Next.js backend-for-frontend boundary
+- Alembic migrations, agent step budgets, evidence citations, human-review defaults, tests, and CI
+
+### Run locally
+
+```bash
+# API
+python -m venv .venv
+pip install -e "apps/api[dev]"
+alembic -c apps/api/alembic.ini upgrade head
+uvicorn fraudlens.main:app --app-dir apps/api/src --reload
+
+# Web console (another terminal)
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000` for the analyst console and `http://localhost:8000/docs` for the API.
+Infrastructure can be started with `docker compose up -d postgres redis kafka minio`.
+
+The local development API key is `fraudlens-local-dev-key`. Replace it through `API_KEY` in every
+shared or deployed environment. The browser never receives this secret; Next.js route handlers
+forward authenticated requests to FastAPI using `FRAUDLENS_API_KEY`.
+
+### Implemented API workflow
+
+```text
+POST /api/v1/cases
+POST /api/v1/cases/{case_id}/evidence
+POST /api/v1/cases/{case_id}/investigate
+GET  /api/v1/cases/{case_id}
+GET  /api/v1/dashboard
+GET  /api/v1/audit
+GET  /api/v1/investigations
+GET  /api/v1/graph
+GET  /api/v1/agents
+GET  /api/v1/policies
+GET  /api/v1/models/health
+```
+
+The analyst console includes routed views for overview, cases and case details, investigations,
+entity relationships, agent registry, detection policies, model readiness, team access, workspace
+settings, and the audit trail. Case search and severity filters run interactively in the browser.
+
+All workflow endpoints require `X-API-Key`; data access is scoped by `X-Tenant-ID` and mutations
+record the actor supplied in `X-Actor`. Replace this service-key boundary with OIDC/JWT claims when
+connecting an enterprise identity provider.
+
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for product and system boundaries.
 
 A production-oriented AI platform for detecting, investigating, scoring, and explaining fraud across **emails, documents, images, videos, audio, identities, URLs, and transaction-related evidence**.
 
