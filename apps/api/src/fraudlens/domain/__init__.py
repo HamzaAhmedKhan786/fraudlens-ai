@@ -1,0 +1,1 @@
+"""Core fraud investigation domain."""
