@@ -25,7 +25,12 @@ def main() -> None:
                 row[0]
                 for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
             }
-        if "cases" in tables and "alembic_version" not in tables:
+            version = (
+                connection.execute("SELECT version_num FROM alembic_version").fetchone()
+                if "alembic_version" in tables
+                else None
+            )
+        if "cases" in tables and version is None:
             # Legacy development databases were created with metadata.create_all().
             # Stamp only the schema that can be proven by table presence, then migrate forward.
             command.stamp(config, "20260812_0002" if "uploads" in tables else "20260810_0001")
