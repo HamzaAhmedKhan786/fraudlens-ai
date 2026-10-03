@@ -1,0 +1,11 @@
+.settings-form { margin-bottom: 14px; }
+.settings-form select,
+.settings-form textarea { background: #091625; border: 1px solid #263b55; border-radius: 6px; color: white; padding: 10px; }
+.settings-form textarea { width: 100%; min-height: 90px; resize: vertical; }
+.form-actions { flex-wrap: wrap; }
+.form-actions button:not(.primary) { background: #10243b; border: 1px solid #2a4563; border-radius: 5px; color: #b9c9da; padding: 8px 12px; cursor: pointer; }
+.policy-record input[type="number"] { width: 54px; background: #091625; border: 1px solid #263b55; color: white; padding: 6px; }
+.policy-record button { margin-left: 8px; background: #143255; border: 1px solid #2e5e8f; color: #bfe0ff; border-radius: 4px; padding: 5px 9px; cursor: pointer; }
+.upload-item > div:last-child { display: flex; gap: 6px; }
+.upload-item > div:last-child a,
+.upload-item > div:last-child button { border: 1px solid #31577c; background: #10263c; color: #78baff; border-radius: 5px; padding: 6px 9px; font-size: 8px; }

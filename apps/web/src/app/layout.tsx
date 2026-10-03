@@ -2,6 +2,7 @@ import "@fontsource-variable/inter";
 import "./styles.css";
 import "./workspace.css";
 import "./ingestion.css";
+import "./workflow.css";
 
 export const metadata = {
   title: "FraudLens AI | Investigation Console",

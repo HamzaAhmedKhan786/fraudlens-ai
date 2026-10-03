@@ -20,6 +20,8 @@ class CaseSummary(BaseModel):
     status: str
     risk_score: int
     severity: str
+    assignee: str | None
+    disposition: str | None
     evidence_count: int
     created_at: datetime
     updated_at: datetime
@@ -27,7 +29,27 @@ class CaseSummary(BaseModel):
 
 class CaseDetail(CaseSummary):
     evidence: list[Evidence]
+    comments: list["CaseComment"]
     latest_report: InvestigationReport | None = None
+
+
+class CaseUpdate(BaseModel):
+    assignee: str | None = Field(default=None, max_length=160)
+    status: str | None = Field(default=None, pattern="^(OPEN|UNDER_REVIEW|ESCALATED|RESOLVED)$")
+    disposition: str | None = Field(
+        default=None, pattern="^(CONFIRMED_FRAUD|FALSE_POSITIVE|INCONCLUSIVE)$"
+    )
+
+
+class CaseCommentCreate(BaseModel):
+    body: str = Field(min_length=1, max_length=4000)
+
+
+class CaseComment(BaseModel):
+    id: str
+    author: str
+    body: str
+    created_at: datetime
 
 
 class DashboardMetrics(BaseModel):
@@ -79,6 +101,19 @@ class PolicyDefinition(BaseModel):
     enabled: bool
     threshold: int
     description: str
+
+
+class PolicyUpdate(BaseModel):
+    enabled: bool
+    threshold: int = Field(ge=0, le=100)
+
+
+class WorkspaceSettings(BaseModel):
+    mandatory_human_review: bool = True
+    llm_narrative_enabled: bool = False
+    critical_risk_threshold: int = Field(default=80, ge=0, le=100)
+    evidence_retention_days: int = Field(default=180, ge=1, le=3650)
+    updated_at: datetime | None = None
 
 
 class ModelHealth(BaseModel):

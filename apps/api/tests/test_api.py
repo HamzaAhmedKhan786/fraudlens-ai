@@ -114,6 +114,10 @@ def test_secure_upload_is_processed_and_deduplicated() -> None:
         listing = client.get(f"/api/v1/uploads?case_id={case_id}", headers=HEADERS)
         assert listing.status_code == 200
         assert listing.json()["total"] == 1
+        download = client.get(f"/api/v1/uploads/{payload['id']}/content", headers=HEADERS)
+        assert download.status_code == 200
+        assert download.content == content
+        assert "attachment" in download.headers["content-disposition"]
 
 
 def test_upload_rejects_unsupported_content() -> None:
@@ -124,3 +128,80 @@ def test_upload_rejects_unsupported_content() -> None:
             files={"file": ("payload.exe", b"MZ-not-an-allowed-file", "application/octet-stream")},
         )
         assert response.status_code == 415
+
+
+def test_case_workflow_settings_and_policy_are_persisted() -> None:
+    suffix = uuid4().hex[:8]
+    case_id = f"FLOW-{suffix}"
+    with TestClient(app) as client:
+        assert (
+            client.post(
+                "/api/v1/cases",
+                headers=HEADERS,
+                json={
+                    "id": case_id,
+                    "tenant_id": "demo",
+                    "subject": "Workflow test",
+                    "case_type": "Email",
+                },
+            ).status_code
+            == 201
+        )
+        updated = client.patch(
+            f"/api/v1/cases/{case_id}",
+            headers=HEADERS,
+            json={"assignee": "analyst@example.com", "status": "ESCALATED"},
+        )
+        assert updated.status_code == 200
+        assert updated.json()["assignee"] == "analyst@example.com"
+        assert (
+            client.post(
+                f"/api/v1/cases/{case_id}/comments",
+                headers=HEADERS,
+                json={"body": "Validated sender anomaly."},
+            ).status_code
+            == 201
+        )
+        decided = client.patch(
+            f"/api/v1/cases/{case_id}",
+            headers=HEADERS,
+            json={"disposition": "INCONCLUSIVE"},
+        )
+        assert decided.json()["status"] == "RESOLVED"
+        assert len(decided.json()["comments"]) == 1
+
+        settings = client.put(
+            "/api/v1/settings",
+            headers=HEADERS,
+            json={
+                "mandatory_human_review": True,
+                "llm_narrative_enabled": False,
+                "critical_risk_threshold": 85,
+                "evidence_retention_days": 365,
+            },
+        )
+        assert settings.status_code == 200
+        assert (
+            client.get("/api/v1/settings", headers=HEADERS).json()["critical_risk_threshold"] == 85
+        )
+
+        policies = client.get("/api/v1/policies", headers=HEADERS).json()
+        policy = policies[0]
+        changed = client.put(
+            f"/api/v1/policies/{policy['id']}",
+            headers=HEADERS,
+            json={"enabled": False, "threshold": 91},
+        )
+        assert changed.status_code == 200
+        assert changed.json()["threshold"] == 91
+
+
+def test_reviewer_role_is_required_for_final_disposition() -> None:
+    headers = {**HEADERS, "X-Roles": "analyst"}
+    with TestClient(app) as client:
+        response = client.patch(
+            "/api/v1/cases/FR-29482",
+            headers=headers,
+            json={"disposition": "CONFIRMED_FRAUD"},
+        )
+        assert response.status_code == 403

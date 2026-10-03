@@ -4,21 +4,35 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from fraudlens.auth import Principal
-from fraudlens.database import AuditRecord, CaseRecord, EvidenceRecord, InvestigationRecord
+from fraudlens.auth import Principal, require_role
+from fraudlens.database import (
+    AuditRecord,
+    CaseCommentRecord,
+    CaseRecord,
+    EvidenceRecord,
+    InvestigationRecord,
+    PolicyRecord,
+    WorkspaceSettingsRecord,
+)
 from fraudlens.domain.models import Evidence, InvestigationRequest
 from fraudlens.orchestrator import InvestigationOrchestrator
 from fraudlens.schemas import (
     AuditEntry,
+    CaseComment,
+    CaseCommentCreate,
     CaseCreate,
     CaseDetail,
     CaseSummary,
+    CaseUpdate,
     DashboardMetrics,
     EntityGraph,
     EvidenceCreate,
     GraphEdge,
     GraphNode,
     InvestigationSummary,
+    PolicyDefinition,
+    PolicyUpdate,
+    WorkspaceSettings,
 )
 
 
@@ -31,6 +45,8 @@ def _summary(case: CaseRecord) -> CaseSummary:
         status=case.status,
         risk_score=case.risk_score,
         severity=case.severity,
+        assignee=case.assignee,
+        disposition=case.disposition,
         evidence_count=len(case.evidence),
         created_at=case.created_at,
         updated_at=case.updated_at,
@@ -92,8 +108,147 @@ async def get_case_detail(session: AsyncSession, principal: Principal, case_id: 
             )
             for item in case.evidence
         ],
+        comments=[
+            CaseComment(id=item.id, author=item.author, body=item.body, created_at=item.created_at)
+            for item in sorted(case.comments, key=lambda row: row.created_at)
+        ],
         latest_report=latest,
     )
+
+
+async def update_case(
+    session: AsyncSession, principal: Principal, case_id: str, payload: CaseUpdate
+) -> CaseDetail:
+    require_role(principal, "analyst", "reviewer", "admin")
+    case = await get_case(session, principal, case_id)
+    changes = payload.model_dump(exclude_unset=True)
+    if "disposition" in changes and changes["disposition"]:
+        require_role(principal, "reviewer", "admin")
+        changes.setdefault("status", "RESOLVED")
+    for key, value in changes.items():
+        setattr(case, key, value)
+    case.updated_at = datetime.now(UTC)
+    await _audit(session, principal, "case.updated", case.id, changes)
+    await session.commit()
+    return await get_case_detail(session, principal, case_id)
+
+
+async def add_case_comment(
+    session: AsyncSession,
+    principal: Principal,
+    case_id: str,
+    payload: CaseCommentCreate,
+) -> CaseComment:
+    require_role(principal, "analyst", "reviewer", "admin")
+    case = await get_case(session, principal, case_id)
+    comment = CaseCommentRecord(
+        case_id=case.id,
+        tenant_id=principal.tenant_id,
+        author=principal.subject,
+        body=payload.body.strip(),
+    )
+    session.add(comment)
+    await _audit(session, principal, "case.comment_added", case.id)
+    await session.commit()
+    await session.refresh(comment)
+    return CaseComment(
+        id=comment.id, author=comment.author, body=comment.body, created_at=comment.created_at
+    )
+
+
+DEFAULT_POLICIES = (
+    ("critical-risk", "Critical risk escalation", 80, "Routes high scores to human review."),
+    ("email-auth", "Email authentication", 60, "Escalates failed email authentication."),
+    ("bank-change", "Supplier bank change", 70, "Escalates unverified payment changes."),
+    ("llm-citations", "LLM citation coverage", 100, "Requires evidence citations."),
+)
+
+
+async def list_policies(session: AsyncSession, principal: Principal) -> list[PolicyDefinition]:
+    rows = list(
+        await session.scalars(
+            select(PolicyRecord).where(PolicyRecord.tenant_id == principal.tenant_id)
+        )
+    )
+    if not rows:
+        rows = [
+            PolicyRecord(
+                id=policy_id,
+                tenant_id=principal.tenant_id,
+                name=name,
+                version="2026.10.1",
+                enabled=True,
+                threshold=threshold,
+                description=description,
+            )
+            for policy_id, name, threshold, description in DEFAULT_POLICIES
+        ]
+        session.add_all(rows)
+        await session.commit()
+    return [
+        PolicyDefinition(
+            id=row.id,
+            name=row.name,
+            version=row.version,
+            enabled=row.enabled,
+            threshold=row.threshold,
+            description=row.description,
+        )
+        for row in rows
+    ]
+
+
+async def update_policy(
+    session: AsyncSession, principal: Principal, policy_id: str, payload: PolicyUpdate
+) -> PolicyDefinition:
+    require_role(principal, "admin")
+    await list_policies(session, principal)
+    row = await session.scalar(
+        select(PolicyRecord).where(
+            PolicyRecord.id == policy_id, PolicyRecord.tenant_id == principal.tenant_id
+        )
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Policy not found")
+    row.enabled = payload.enabled
+    row.threshold = payload.threshold
+    row.version = datetime.now(UTC).strftime("%Y.%m.%d")
+    await _audit(session, principal, "policy.updated", policy_id, payload.model_dump())
+    await session.commit()
+    policies = await list_policies(session, principal)
+    return next(item for item in policies if item.id == policy_id)
+
+
+async def get_workspace_settings(session: AsyncSession, principal: Principal) -> WorkspaceSettings:
+    row = await session.get(WorkspaceSettingsRecord, principal.tenant_id)
+    if not row:
+        row = WorkspaceSettingsRecord(tenant_id=principal.tenant_id)
+        session.add(row)
+        await session.commit()
+        await session.refresh(row)
+    return WorkspaceSettings(
+        mandatory_human_review=row.mandatory_human_review,
+        llm_narrative_enabled=row.llm_narrative_enabled,
+        critical_risk_threshold=row.critical_risk_threshold,
+        evidence_retention_days=row.evidence_retention_days,
+        updated_at=row.updated_at,
+    )
+
+
+async def update_workspace_settings(
+    session: AsyncSession, principal: Principal, payload: WorkspaceSettings
+) -> WorkspaceSettings:
+    require_role(principal, "admin")
+    row = await session.get(WorkspaceSettingsRecord, principal.tenant_id)
+    if not row:
+        row = WorkspaceSettingsRecord(tenant_id=principal.tenant_id)
+        session.add(row)
+    for key, value in payload.model_dump(exclude={"updated_at"}).items():
+        setattr(row, key, value)
+    row.updated_at = datetime.now(UTC)
+    await _audit(session, principal, "workspace.settings_updated", principal.tenant_id)
+    await session.commit()
+    return await get_workspace_settings(session, principal)
 
 
 async def create_case(

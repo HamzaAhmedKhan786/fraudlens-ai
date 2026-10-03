@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fraudlens.auth import Principal, require_principal
@@ -13,28 +13,39 @@ from fraudlens.orchestrator import InvestigationOrchestrator
 from fraudlens.schemas import (
     AgentStatus,
     AuditEntry,
+    CaseComment,
+    CaseCommentCreate,
     CaseCreate,
     CaseDetail,
     CaseSummary,
+    CaseUpdate,
     DashboardMetrics,
     EntityGraph,
     EvidenceCreate,
     InvestigationSummary,
     ModelHealth,
     PolicyDefinition,
+    PolicyUpdate,
     UploadList,
     UploadSummary,
+    WorkspaceSettings,
 )
 from fraudlens.services import (
+    add_case_comment,
     add_evidence,
     audit_log,
     create_case,
     dashboard,
     entity_graph,
     get_case_detail,
+    get_workspace_settings,
     investigate_case,
     list_cases,
     list_investigations,
+    list_policies,
+    update_case,
+    update_policy,
+    update_workspace_settings,
 )
 
 router = APIRouter()
@@ -86,6 +97,26 @@ async def get_case(
     principal: Annotated[Principal, Depends(require_principal)],
 ) -> CaseDetail:
     return await get_case_detail(session, principal, case_id)
+
+
+@router.patch("/cases/{case_id}", response_model=CaseDetail)
+async def patch_case(
+    case_id: str,
+    payload: CaseUpdate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+) -> CaseDetail:
+    return await update_case(session, principal, case_id, payload)
+
+
+@router.post("/cases/{case_id}/comments", response_model=CaseComment, status_code=201)
+async def post_case_comment(
+    case_id: str,
+    payload: CaseCommentCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+) -> CaseComment:
+    return await add_case_comment(session, principal, case_id, payload)
 
 
 @router.post("/cases/{case_id}/evidence", status_code=201)
@@ -176,42 +207,37 @@ async def get_agents(_: Annotated[Principal, Depends(require_principal)]) -> lis
 
 @router.get("/policies", response_model=list[PolicyDefinition])
 async def get_policies(
-    _: Annotated[Principal, Depends(require_principal)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
 ) -> list[PolicyDefinition]:
-    return [
-        PolicyDefinition(
-            id="critical-risk",
-            name="Critical risk escalation",
-            version="2026.08.1",
-            enabled=True,
-            threshold=80,
-            description="Routes cases scoring 80 or above to immediate human review.",
-        ),
-        PolicyDefinition(
-            id="email-auth",
-            name="Email authentication",
-            version="2026.08.1",
-            enabled=True,
-            threshold=60,
-            description="Raises high-risk findings when SPF, DKIM, or DMARC fails.",
-        ),
-        PolicyDefinition(
-            id="bank-change",
-            name="Supplier bank change",
-            version="2026.08.1",
-            enabled=True,
-            threshold=70,
-            description="Escalates unverified IBAN changes on invoices.",
-        ),
-        PolicyDefinition(
-            id="llm-citations",
-            name="LLM citation coverage",
-            version="2026.08.1",
-            enabled=True,
-            threshold=100,
-            description="Requires every generated claim to reference validated evidence.",
-        ),
-    ]
+    return await list_policies(session, principal)
+
+
+@router.put("/policies/{policy_id}", response_model=PolicyDefinition)
+async def put_policy(
+    policy_id: str,
+    payload: PolicyUpdate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+) -> PolicyDefinition:
+    return await update_policy(session, principal, policy_id, payload)
+
+
+@router.get("/settings", response_model=WorkspaceSettings)
+async def get_settings(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+) -> WorkspaceSettings:
+    return await get_workspace_settings(session, principal)
+
+
+@router.put("/settings", response_model=WorkspaceSettings)
+async def put_settings(
+    payload: WorkspaceSettings,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+) -> WorkspaceSettings:
+    return await update_workspace_settings(session, principal, payload)
 
 
 @router.get("/models/health", response_model=list[ModelHealth])
@@ -288,6 +314,25 @@ async def get_upload(
     ingestion: Annotated[IngestionService, Depends(get_ingestion_service)],
 ) -> UploadSummary:
     return await ingestion.get(session, principal, upload_id)
+
+
+@router.get("/uploads/{upload_id}/content")
+async def download_upload(
+    upload_id: str,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+    ingestion: Annotated[IngestionService, Depends(get_ingestion_service)],
+) -> Response:
+    data, record = await ingestion.download(session, principal, upload_id)
+    safe_name = record.filename.replace('"', "")
+    return Response(
+        content=data,
+        media_type=record.detected_content_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_name}"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.post("/uploads/{upload_id}/retry", response_model=UploadSummary)

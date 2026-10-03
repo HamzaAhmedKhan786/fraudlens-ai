@@ -32,7 +32,7 @@ The repository now contains an executable enterprise foundation:
 # API
 python -m venv .venv
 pip install -e "apps/api[dev]"
-alembic -c apps/api/alembic.ini upgrade head
+python -m fraudlens.db_upgrade
 uvicorn fraudlens.main:app --app-dir apps/api/src --reload
 
 # Web console (another terminal)
