@@ -23,6 +23,8 @@ class CaseRecord(Base):
     status: Mapped[str] = mapped_column(String(40), default="OPEN", index=True)
     risk_score: Mapped[int] = mapped_column(Integer, default=0)
     severity: Mapped[str] = mapped_column(String(20), default="LOW")
+    assignee: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
+    disposition: Mapped[str | None] = mapped_column(String(40), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
@@ -39,6 +41,55 @@ class CaseRecord(Base):
     )
     uploads: Mapped[list["UploadRecord"]] = relationship(
         back_populates="case", cascade="all, delete-orphan", lazy="selectin"
+    )
+    comments: Mapped[list["CaseCommentRecord"]] = relationship(
+        back_populates="case", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+
+class CaseCommentRecord(Base):
+    __tablename__ = "case_comments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    case_id: Mapped[str] = mapped_column(ForeignKey("cases.id", ondelete="CASCADE"), index=True)
+    tenant_id: Mapped[str] = mapped_column(String(100), index=True)
+    author: Mapped[str] = mapped_column(String(160))
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
+    )
+    case: Mapped[CaseRecord] = relationship(back_populates="comments")
+
+
+class WorkspaceSettingsRecord(Base):
+    __tablename__ = "workspace_settings"
+
+    tenant_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    mandatory_human_review: Mapped[bool] = mapped_column(default=True)
+    llm_narrative_enabled: Mapped[bool] = mapped_column(default=False)
+    critical_risk_threshold: Mapped[int] = mapped_column(Integer, default=80)
+    evidence_retention_days: Mapped[int] = mapped_column(Integer, default=180)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+
+class PolicyRecord(Base):
+    __tablename__ = "policies"
+
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(160))
+    version: Mapped[str] = mapped_column(String(40))
+    enabled: Mapped[bool] = mapped_column(default=True)
+    threshold: Mapped[int] = mapped_column(Integer)
+    description: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
 
 

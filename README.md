@@ -10,6 +10,18 @@
 
 ## Working MVP foundation
 
+### Product screenshots
+
+| Dashboard | Evidence intake |
+| --- | --- |
+| ![Fraud operations dashboard](screenshots/01-dashboard.jpg) | ![Secure evidence intake](screenshots/02-evidence-intake.jpg) |
+
+| Case workflow | Detection policies |
+| --- | --- |
+| ![Analyst case workflow](screenshots/03-case-workflow.jpg) | ![Detection policy management](screenshots/04-detection-policies.jpg) |
+
+![Workspace settings](screenshots/05-workspace-settings.jpg)
+
 The repository now contains an executable enterprise foundation:
 
 - `apps/api` — FastAPI control plane with deterministic email, document, and URL agents
@@ -32,7 +44,7 @@ The repository now contains an executable enterprise foundation:
 # API
 python -m venv .venv
 pip install -e "apps/api[dev]"
-alembic -c apps/api/alembic.ini upgrade head
+python -m fraudlens.db_upgrade
 uvicorn fraudlens.main:app --app-dir apps/api/src --reload
 
 # Web console (another terminal)

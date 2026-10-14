@@ -250,6 +250,16 @@ class IngestionService:
     ) -> UploadSummary:
         return upload_summary(await self._get_record(session, principal, upload_id))
 
+    async def download(
+        self, session: AsyncSession, principal: Principal, upload_id: str
+    ) -> tuple[bytes, UploadRecord]:
+        record = await self._get_record(session, principal, upload_id)
+        if not record.object_available:
+            raise HTTPException(status_code=410, detail="Original evidence has expired")
+        if record.status == "QUARANTINED":
+            raise HTTPException(status_code=423, detail="Quarantined evidence cannot be downloaded")
+        return await self.storage.get(record.storage_key), record
+
     async def _get_record(
         self, session: AsyncSession, principal: Principal, upload_id: str
     ) -> UploadRecord:
