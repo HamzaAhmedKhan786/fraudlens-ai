@@ -10,6 +10,18 @@
 
 ## Working MVP foundation
 
+### Product screenshots
+
+| Dashboard | Evidence intake |
+| --- | --- |
+| ![Fraud operations dashboard](screenshots/01-dashboard.jpg) | ![Secure evidence intake](screenshots/02-evidence-intake.jpg) |
+
+| Case workflow | Detection policies |
+| --- | --- |
+| ![Analyst case workflow](screenshots/03-case-workflow.jpg) | ![Detection policy management](screenshots/04-detection-policies.jpg) |
+
+![Workspace settings](screenshots/05-workspace-settings.jpg)
+
 The repository now contains an executable enterprise foundation:
 
 - `apps/api` — FastAPI control plane with deterministic email, document, and URL agents
