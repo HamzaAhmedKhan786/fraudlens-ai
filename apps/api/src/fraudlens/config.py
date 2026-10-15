@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,10 +21,10 @@ class Settings(BaseSettings):
     llm_provider: str = "disabled"
     openai_api_key: str | None = None
     openai_model: str = "gpt-5-mini"
-    max_agent_steps: int = 12
-    minimum_citation_coverage: float = 1.0
-    max_upload_bytes: int = 52_428_800
-    upload_chunk_bytes: int = 1_048_576
+    max_agent_steps: int = Field(default=12, ge=1, le=100)
+    minimum_citation_coverage: float = Field(default=1.0, ge=0, le=1)
+    max_upload_bytes: int = Field(default=52_428_800, ge=1)
+    upload_chunk_bytes: int = Field(default=1_048_576, ge=1)
     object_storage_backend: str = "filesystem"
     object_storage_root: str = ".data/objects"
     object_storage_endpoint: str = "localhost:9000"
@@ -36,8 +37,30 @@ class Settings(BaseSettings):
     clamav_host: str = "localhost"
     clamav_port: int = 3310
     processing_inline: bool = True
-    upload_retention_days: int = 30
-    metadata_retention_days: int = 180
+    upload_retention_days: int = Field(default=30, ge=1)
+    metadata_retention_days: int = Field(default=180, ge=1)
+
+    @model_validator(mode="after")
+    def validate_runtime_configuration(self) -> "Settings":
+        if self.llm_provider == "openai" and not self.openai_api_key:
+            raise ValueError("OPENAI_API_KEY is required when LLM_PROVIDER=openai")
+        if self.clamav_required and not self.clamav_enabled:
+            raise ValueError("CLAMAV_ENABLED must be true when CLAMAV_REQUIRED=true")
+        if not self.processing_inline and not self.kafka_enabled:
+            raise ValueError("KAFKA_ENABLED must be true when PROCESSING_INLINE=false")
+        if self.environment.lower() == "production":
+            insecure_keys = {
+                "fraudlens-local-dev-key",
+                "fraudlens-compose-dev-key",
+                "replace-with-a-long-random-secret",
+            }
+            if self.api_key in insecure_keys or len(self.api_key) < 32:
+                raise ValueError("API_KEY must be a unique secret of at least 32 characters")
+            if self.database_url.startswith("sqlite"):
+                raise ValueError("Production requires PostgreSQL; SQLite is development-only")
+            if self.object_storage_backend == "filesystem":
+                raise ValueError("Production requires durable object storage such as MinIO or S3")
+        return self
 
     @property
     def allowed_origins(self) -> list[str]:
