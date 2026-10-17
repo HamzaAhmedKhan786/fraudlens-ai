@@ -69,3 +69,57 @@ def test_risk_engine_caps_score() -> None:
         for i in range(3)
     ]
     assert RiskEngine().assess(findings).score == 100
+
+
+def test_tenant_critical_threshold_changes_classification_not_score() -> None:
+    from fraudlens.domain.models import Finding
+
+    findings = [
+        Finding(
+            agent="test",
+            code="THRESHOLD_RULE",
+            title="Risk",
+            explanation="Test",
+            severity=Severity.HIGH,
+            confidence=1,
+            risk_points=75,
+            evidence_ids=["e-1"],
+        )
+    ]
+    default = RiskEngine().assess(findings)
+    tenant_policy = RiskEngine().assess(findings, critical_threshold=70)
+    assert default.score == tenant_policy.score == 75
+    assert default.severity is Severity.HIGH
+    assert tenant_policy.severity is Severity.CRITICAL
+
+
+@pytest.mark.asyncio
+async def test_document_agent_scores_extracted_payment_pressure() -> None:
+    from fraudlens.agents.base import AgentContext
+
+    agent = DocumentIntegrityAgent()
+    findings = await agent.analyze(
+        AgentContext(
+            case_id="CASE-2002",
+            tenant_id="demo",
+            evidence=[
+                Evidence(
+                    id="document-1",
+                    kind="document",
+                    source="invoice.txt",
+                    attributes={
+                        "payment_change_language": True,
+                        "urgent_payment_language": True,
+                    },
+                )
+            ],
+        )
+    )
+
+    assert {finding.code for finding in findings} == {
+        "PAYMENT_ACCOUNT_CHANGE_REQUEST",
+        "URGENT_PAYMENT_LANGUAGE",
+    }
+    assessment = RiskEngine().assess(findings)
+    assert assessment.score == 45
+    assert assessment.severity is Severity.MEDIUM

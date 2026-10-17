@@ -79,6 +79,37 @@ class DocumentIntegrityAgent(DeterministicAgent):
                         evidence_ids=[evidence.id],
                     )
                 )
+            if attrs.get("payment_change_language") is True:
+                findings.append(
+                    Finding(
+                        agent=self.name,
+                        code="PAYMENT_ACCOUNT_CHANGE_REQUEST",
+                        title="Payment account change requested",
+                        explanation=(
+                            "The document asks the recipient to use new or changed bank details. "
+                            "Validate the request using a trusted supplier contact channel."
+                        ),
+                        severity=Severity.HIGH,
+                        confidence=0.92,
+                        risk_points=32,
+                        evidence_ids=[evidence.id],
+                    )
+                )
+            if attrs.get("urgent_payment_language") is True:
+                findings.append(
+                    Finding(
+                        agent=self.name,
+                        code="URGENT_PAYMENT_LANGUAGE",
+                        title="Urgent payment language detected",
+                        explanation=(
+                            "The document applies urgency or secrecy pressure around a payment."
+                        ),
+                        severity=Severity.MEDIUM,
+                        confidence=0.86,
+                        risk_points=18,
+                        evidence_ids=[evidence.id],
+                    )
+                )
         return findings
 
 

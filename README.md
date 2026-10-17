@@ -60,6 +60,31 @@ The local development API key is `fraudlens-local-dev-key`. Replace it through `
 shared or deployed environment. The browser never receives this secret; Next.js route handlers
 forward authenticated requests to FastAPI using `FRAUDLENS_API_KEY`.
 
+### Configure local secrets
+
+Never commit real credentials. The root `.env` configures FastAPI and Docker Compose, while
+`apps/web/.env.local` configures the Next.js server when it runs directly on the host:
+
+```powershell
+Copy-Item .env.example .env
+Copy-Item apps/web/.env.example apps/web/.env.local
+```
+
+Set `API_KEY` in `.env` and set `FRAUDLENS_API_KEY` in `apps/web/.env.local` to the same long,
+random value. `FRAUDLENS_API_URL` is normally `http://127.0.0.1:8000/api/v1` for host development
+and `http://api:8000/api/v1` in Docker Compose. `FRAUDLENS_API_KEY` is intentionally server-only;
+never rename it to a `NEXT_PUBLIC_*` variable.
+
+The remaining service configuration belongs in the root `.env`. `CORS_ORIGINS` contains the
+comma-separated browser origins allowed to call FastAPI, while `ALLOWED_HOSTS` contains API host
+names only. Enable the OpenAI provider only after setting `OPENAI_API_KEY`. Asynchronous evidence
+processing requires Kafka, and required malware scanning requires ClamAV. Production startup
+rejects placeholder API keys, SQLite, and local filesystem evidence storage.
+
+Groq is also supported through its OpenAI-compatible Responses API. Set `LLM_PROVIDER=groq`,
+`GROQ_API_KEY`, and a supported `GROQ_MODEL`; the provider can generate cited narratives but cannot
+change deterministic findings or risk scores.
+
 ### Implemented API workflow
 
 ```text
@@ -89,6 +114,8 @@ record the actor supplied in `X-Actor`. Replace this service-key boundary with O
 connecting an enterprise identity provider.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for product and system boundaries.
+See [`docs/USE_CASES.md`](docs/USE_CASES.md) for operational fraud scenarios, risk-level semantics,
+malware behavior, and the integration roadmap.
 
 A production-oriented AI platform for detecting, investigating, scoring, and explaining fraud across **emails, documents, images, videos, audio, identities, URLs, and transaction-related evidence**.
 

@@ -1,3 +1,4 @@
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from email import policy
@@ -67,6 +68,7 @@ class EvidenceParser:
                 "producer": str(metadata.get("/Producer", ""))[:500],
                 "text_excerpt": text[:10_000],
                 "encrypted": bool(reader.is_encrypted),
+                **self._document_signals(text),
             },
         )
 
@@ -80,12 +82,14 @@ class EvidenceParser:
             for table in document.tables
             for row in table.rows
         ]
+        text = "\n".join([*paragraphs, *tables])
         return ParsedEvidence(
             "document",
             {
                 "paragraph_count": len(paragraphs),
                 "table_row_count": len(tables),
-                "text_excerpt": "\n".join([*paragraphs, *tables])[:10_000],
+                "text_excerpt": text[:10_000],
+                **self._document_signals(text),
             },
         )
 
@@ -93,7 +97,11 @@ class EvidenceParser:
         text = data.decode("utf-8", errors="replace")
         return ParsedEvidence(
             "document",
-            {"character_count": len(text), "text_excerpt": text[:10_000]},
+            {
+                "character_count": len(text),
+                "text_excerpt": text[:10_000],
+                **self._document_signals(text),
+            },
         )
 
     def _image(self, data: bytes) -> ParsedEvidence:
@@ -114,3 +122,56 @@ class EvidenceParser:
                     "exif_keys": sorted(exif.keys())[:100],
                 },
             )
+
+    @staticmethod
+    def _document_signals(text: str) -> dict[str, bool | list[str]]:
+        normalized = " ".join(text.lower().split())
+        country_lengths = {
+            "AT": 20,
+            "BE": 16,
+            "CH": 21,
+            "DE": 22,
+            "ES": 24,
+            "FR": 27,
+            "GB": 22,
+            "IE": 22,
+            "IT": 27,
+            "NL": 18,
+            "PL": 28,
+        }
+        ibans: set[str] = set()
+        for match in re.findall(r"\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]){11,30}\b", text, re.IGNORECASE):
+            candidate = re.sub(r"\s+", "", match).upper()
+            expected_length = country_lengths.get(candidate[:2])
+            if expected_length:
+                candidate = candidate[:expected_length]
+            rearranged = candidate[4:] + candidate[:4]
+            numeric = "".join(
+                character if character.isdigit() else str(ord(character) - 55)
+                for character in rearranged
+            )
+            if 15 <= len(candidate) <= 34 and int(numeric) % 97 == 1:
+                ibans.add(candidate)
+        payment_change_phrases = (
+            "bank details have changed",
+            "new bank account",
+            "updated bank account",
+            "change of bank details",
+            "pay to the following account",
+            "use the new iban",
+        )
+        urgency_phrases = (
+            "urgent payment",
+            "pay immediately",
+            "immediate transfer",
+            "payment today",
+            "avoid delay",
+            "confidential payment",
+        )
+        return {
+            "ibans": sorted(ibans)[:20],
+            "payment_change_language": any(
+                phrase in normalized for phrase in payment_change_phrases
+            ),
+            "urgent_payment_language": any(phrase in normalized for phrase in urgency_phrases),
+        }

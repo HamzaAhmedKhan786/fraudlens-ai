@@ -22,13 +22,13 @@ class DeterministicNarrativeGenerator:
         )
 
 
-class OpenAINarrativeGenerator:
+class OpenAICompatibleNarrativeGenerator:
     """Evidence-grounded narrative only; this component cannot change findings or risk."""
 
-    def __init__(self, api_key: str, model: str) -> None:
+    def __init__(self, api_key: str, model: str, base_url: str | None = None) -> None:
         from openai import AsyncOpenAI
 
-        self._client = AsyncOpenAI(api_key=api_key)
+        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self._model = model
 
     async def summarize(self, findings: list[Finding], risk: RiskAssessment) -> str:

@@ -5,7 +5,10 @@ from fraudlens.agents.deterministic import (
     EmailSecurityAgent,
     UrlReputationAgent,
 )
-from fraudlens.agents.llm import DeterministicNarrativeGenerator, OpenAINarrativeGenerator
+from fraudlens.agents.llm import (
+    DeterministicNarrativeGenerator,
+    OpenAICompatibleNarrativeGenerator,
+)
 from fraudlens.agents.risk import RiskEngine
 from fraudlens.config import get_settings
 from fraudlens.events import InMemoryEventPublisher, KafkaEventPublisher
@@ -29,7 +32,15 @@ def get_orchestrator() -> InvestigationOrchestrator:
     settings = get_settings()
     narrative = DeterministicNarrativeGenerator()
     if settings.llm_provider == "openai" and settings.openai_api_key:
-        narrative = OpenAINarrativeGenerator(settings.openai_api_key, settings.openai_model)
+        narrative = OpenAICompatibleNarrativeGenerator(
+            settings.openai_api_key, settings.openai_model
+        )
+    elif settings.llm_provider == "groq" and settings.groq_api_key:
+        narrative = OpenAICompatibleNarrativeGenerator(
+            settings.groq_api_key,
+            settings.groq_model,
+            base_url=settings.groq_base_url,
+        )
     return InvestigationOrchestrator(
         agents=[EmailSecurityAgent(), DocumentIntegrityAgent(), UrlReputationAgent()],
         risk_engine=RiskEngine(),

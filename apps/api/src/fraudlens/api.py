@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fraudlens.auth import Principal, require_principal
+from fraudlens.config import get_settings as get_runtime_settings
 from fraudlens.database import get_session
 from fraudlens.dependencies import get_ingestion_service, get_orchestrator
 from fraudlens.domain.models import InvestigationReport, InvestigationRequest
@@ -245,6 +246,7 @@ async def get_model_health(
     _: Annotated[Principal, Depends(require_principal)],
 ) -> list[ModelHealth]:
     now = datetime.now(UTC)
+    settings = get_runtime_settings()
     return [
         ModelHealth(
             id="rules-2026-08",
@@ -256,22 +258,37 @@ async def get_model_health(
             detail="Ruleset 2026.08.1 loaded.",
         ),
         ModelHealth(
-            id="openai-narrative",
+            id="llm-narrative",
             name="Investigation Narrative",
-            provider="OpenAI / configurable",
+            provider={"openai": "OpenAI", "groq": "Groq"}.get(
+                settings.llm_provider, "Not configured"
+            ),
             status="STANDBY",
             latency_ms=None,
             last_checked=now,
-            detail="Enabled only when LLM_PROVIDER and credentials are configured.",
+            detail=(
+                f"Evidence-grounded narratives configured with {settings.llm_provider}."
+                if settings.llm_provider in {"openai", "groq"}
+                else "Enable OpenAI or Groq with provider credentials for cited narratives."
+            ),
         ),
         ModelHealth(
-            id="document-model",
-            name="Document Vision",
-            provider="Not configured",
+            id="document-extraction",
+            name="Document extraction",
+            provider="FraudLens deterministic parser",
+            status="HEALTHY",
+            latency_ms=8,
+            last_checked=now,
+            detail="PDF, DOCX and text extraction with IBAN and payment-change indicators.",
+        ),
+        ModelHealth(
+            id="document-vision-model",
+            name="Document OCR & tamper vision",
+            provider="Adapter required",
             status="NOT_CONFIGURED",
             latency_ms=None,
             last_checked=now,
-            detail="Awaiting a validated OCR/tamper model adapter.",
+            detail="Scanned-image OCR and pixel-level tamper detection require a validated model.",
         ),
         ModelHealth(
             id="deepfake-model",
@@ -281,6 +298,19 @@ async def get_model_health(
             latency_ms=None,
             last_checked=now,
             detail="No production model has been approved or calibrated.",
+        ),
+        ModelHealth(
+            id="malware-scanner",
+            name="Malware scanning",
+            provider="ClamAV" if settings.clamav_enabled else "Not configured",
+            status="HEALTHY" if settings.clamav_enabled else "NOT_CONFIGURED",
+            latency_ms=None,
+            last_checked=now,
+            detail=(
+                "Uploads are scanned before parsing; infected objects are quarantined."
+                if settings.clamav_enabled
+                else "Enable CLAMAV_ENABLED to scan uploads and quarantine infected evidence."
+            ),
         ),
     ]
 

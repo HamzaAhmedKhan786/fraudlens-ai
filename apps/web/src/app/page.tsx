@@ -1,6 +1,6 @@
 import {
   Activity, Bell, ChevronDown, CircleUserRound, FileWarning, Gauge, GitBranch,
-  LayoutDashboard, ListFilter, Search, Settings, ShieldCheck, Sparkles, UploadCloud, Users, Workflow,
+  LayoutDashboard, ListFilter, Search, Settings, ShieldAlert, ShieldCheck, Sparkles, UploadCloud, Users, Workflow,
 } from "lucide-react";
 import Link from "next/link";
 import { getDashboard, type DashboardMetrics } from "@/lib/backend";
@@ -12,11 +12,23 @@ const fallback: DashboardMetrics = {
 };
 
 const agents = [
-  ["Email security", "Reply-To and authentication", "3 findings", "done"],
-  ["Document integrity", "IBAN and metadata analysis", "2 findings", "done"],
-  ["URL reputation", "Domain age and redirect chain", "1 finding", "done"],
-  ["AI investigator", "Evidence-grounded synthesis", "Running", "active"],
+  ["Email security", "Reply-To and authentication", "Rules ready", "done"],
+  ["Document integrity", "IBAN and payment-change analysis", "Rules ready", "done"],
+  ["URL reputation", "Domain age and redirect chain", "Rules ready", "done"],
+  ["AI investigator", "Evidence-grounded synthesis", "Provider aware", "active"],
 ];
+
+function RiskGauge({ score }: { score: number }) {
+  const bounded = Math.max(0, Math.min(100, score));
+  return <div className="risk-gauge" aria-label={`Risk score ${bounded} out of 100`}>
+    <svg viewBox="0 0 120 120" role="img">
+      <defs><linearGradient id="risk-gradient" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#ffb14a"/><stop offset=".48" stopColor="#ff4967"/><stop offset="1" stopColor="#a855f7"/></linearGradient></defs>
+      <circle className="risk-track" cx="60" cy="60" r="48" pathLength="100" />
+      <circle className="risk-progress" cx="60" cy="60" r="48" pathLength="100" strokeDasharray={`${bounded} ${100 - bounded}`} />
+    </svg>
+    <div className="risk-gauge-value"><ShieldAlert size={15}/><strong>{bounded}</strong><span>of 100</span></div>
+  </div>;
+}
 
 const navPaths: Record<string, string> = { Overview: "/", Cases: "/cases", "Evidence intake": "/uploads", Investigations: "/investigations", "Entity graph": "/graph", "Agent activity": "/agents", "Detection policies": "/policies", "Model health": "/models", "Team & access": "/team", Settings: "/settings" };
 function NavItem({ icon: Icon, label, active = false }: { icon: typeof Gauge; label: string; active?: boolean }) {
@@ -29,6 +41,9 @@ export default async function Dashboard() {
     id: item.id, subject: item.subject, type: item.case_type, score: item.risk_score,
     level: item.severity[0] + item.severity.slice(1).toLowerCase(), age: item.status.replaceAll("_", " "),
   }));
+  const liveCase = cases[0];
+  const liveScore = liveCase?.score ?? 0;
+  const liveLevel = liveCase?.level ?? "Low";
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -80,8 +95,8 @@ export default async function Dashboard() {
             </section>
 
             <aside className="panel agent-panel">
-              <div className="panel-head"><div><h2>Live investigation</h2><p>FR-29482 · 4 agents</p></div><span className="live"><i /> LIVE</span></div>
-              <div className="risk-hero"><div className="risk-ring"><strong>92</strong><span>/100</span></div><div><span>OVERALL RISK</span><strong>Critical</strong><p>High-confidence fraud pattern</p></div></div>
+              <div className="panel-head"><div><h2>Priority investigation</h2><p>{liveCase ? `${liveCase.id} · deterministic assessment` : "No active case"}</p></div><span className="live"><i /> LIVE</span></div>
+              <div className="risk-hero"><RiskGauge score={liveScore}/><div className="risk-summary"><span>DETERMINISTIC RISK</span><strong className={liveLevel.toLowerCase()}>{liveLevel}</strong><p>{liveScore >= 80 ? "Critical · immediate human review" : liveScore >= 60 ? "High · expedited review" : liveScore >= 30 ? "Medium · analyst review" : "Low · monitor and validate"}</p><div className="risk-scale"><i>Low 0–29</i><i>Med 30–59</i><i>High 60–79</i><i>Critical 80+</i></div></div></div>
               <div className="agent-list">{agents.map(([name, detail, result, state]) => <div className="agent" key={name}><span className={state}><ShieldCheck size={16} /></span><div><strong>{name}</strong><small>{detail}</small></div><b>{result}</b></div>)}</div>
               <Link className="open-case" href="/investigations">Open investigation <span>→</span></Link>
             </aside>

@@ -6,12 +6,12 @@ class RiskEngine:
 
     ruleset_version = "2026.08.1"
 
-    def assess(self, findings: list[Finding]) -> RiskAssessment:
+    def assess(self, findings: list[Finding], critical_threshold: int = 80) -> RiskAssessment:
         # Confidence scales each rule contribution; the cap prevents uncontrolled additive scores.
         score = min(100, round(sum(item.risk_points * item.confidence for item in findings)))
         severity = (
             Severity.CRITICAL
-            if score >= 80
+            if score >= critical_threshold
             else Severity.HIGH
             if score >= 60
             else Severity.MEDIUM
