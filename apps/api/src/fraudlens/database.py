@@ -169,6 +169,22 @@ class UploadRecord(Base):
     case: Mapped[CaseRecord] = relationship(back_populates="uploads")
 
 
+class PublicIntelligenceRecord(Base):
+    __tablename__ = "public_intelligence"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str] = mapped_column(String(100), index=True)
+    indicator_type: Mapped[str] = mapped_column(String(40), index=True)
+    indicator: Mapped[str] = mapped_column(String(500), index=True)
+    provider: Mapped[str] = mapped_column(String(80))
+    source_uri: Mapped[str] = mapped_column(String(1000))
+    status: Mapped[str] = mapped_column(String(40), default="OBSERVED")
+    facts: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
+    )
+
+
 settings = get_settings()
 engine = create_async_engine(settings.database_url, pool_pre_ping=True)
 session_factory = async_sessionmaker(engine, expire_on_commit=False)

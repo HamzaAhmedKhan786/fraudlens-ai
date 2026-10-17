@@ -2,6 +2,8 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from fraudlens.main import app
+from fraudlens.schemas import DomainLookup
+from pydantic import ValidationError
 
 HEADERS = {
     "X-API-Key": "fraudlens-local-dev-key",
@@ -70,10 +72,20 @@ def test_operational_read_models_are_available() -> None:
             "/api/v1/agents",
             "/api/v1/policies",
             "/api/v1/models/health",
+            "/api/v1/intelligence/public",
             "/api/v1/audit",
         ):
             response = client.get(path, headers=HEADERS)
             assert response.status_code == 200, path
+
+
+def test_public_intelligence_domain_input_is_constrained() -> None:
+    assert DomainLookup(domain="example.com").domain == "example.com"
+    try:
+        DomainLookup(domain="not_a_domain!")
+    except ValidationError:
+        return
+    raise AssertionError("Invalid domain was accepted")
 
 
 def test_secure_upload_is_processed_and_deduplicated() -> None:

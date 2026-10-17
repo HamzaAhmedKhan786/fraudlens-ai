@@ -392,6 +392,7 @@ async def dashboard(session: AsyncSession, principal: Principal) -> DashboardMet
     ]
     average = sum(case.risk_score for case in cases) / len(cases) if cases else 0
     return DashboardMetrics(
+        data_source="DEMO_DATASET" if principal.tenant_id == "demo" else "OPERATIONAL_DATA",
         open_cases=sum(case.status in {"OPEN", "UNDER_REVIEW"} for case in cases),
         critical_cases=sum(case.severity == "CRITICAL" for case in cases),
         high_risk_cases=sum(case.severity in {"HIGH", "CRITICAL"} for case in cases),

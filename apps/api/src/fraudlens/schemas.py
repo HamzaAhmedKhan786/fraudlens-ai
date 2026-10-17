@@ -53,6 +53,7 @@ class CaseComment(BaseModel):
 
 
 class DashboardMetrics(BaseModel):
+    data_source: str
     open_cases: int
     critical_cases: int
     high_risk_cases: int
@@ -174,3 +175,18 @@ class UploadSummary(BaseModel):
 class UploadList(BaseModel):
     items: list[UploadSummary]
     total: int
+
+
+class DomainLookup(BaseModel):
+    domain: str = Field(min_length=3, max_length=253, pattern=r"^[A-Za-z0-9.-]+$")
+
+
+class PublicIntelligence(BaseModel):
+    id: str
+    indicator_type: str
+    indicator: str
+    provider: str
+    source_uri: str
+    status: str
+    facts: dict[str, object]
+    fetched_at: datetime
