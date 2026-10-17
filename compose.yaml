@@ -77,6 +77,15 @@ services:
       CLAMAV_REQUIRED: "true"
       CLAMAV_HOST: clamav
       CLAMAV_PORT: "3310"
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:8000/api/v1/connectors/google/callback}
+      GOOGLE_GMAIL_SCOPES: ${GOOGLE_GMAIL_SCOPES:-https://www.googleapis.com/auth/gmail.readonly}
+      GOOGLE_TOKEN_ENCRYPTION_KEY: ${GOOGLE_TOKEN_ENCRYPTION_KEY:-}
+      OCR_ENABLED: ${OCR_ENABLED:-true}
+      OCR_LANGUAGES: ${OCR_LANGUAGES:-eng+deu+spa+ita+urd+fra+ara}
+      TESSERACT_CMD: tesseract
+      TESSDATA_PREFIX: /usr/share/tesseract-ocr/5/tessdata
     ports: ["8000:8000"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -108,6 +117,10 @@ services:
       CLAMAV_REQUIRED: "true"
       CLAMAV_HOST: clamav
       CLAMAV_PORT: "3310"
+      OCR_ENABLED: ${OCR_ENABLED:-true}
+      OCR_LANGUAGES: ${OCR_LANGUAGES:-eng+deu+spa+ita+urd+fra+ara}
+      TESSERACT_CMD: tesseract
+      TESSDATA_PREFIX: /usr/share/tesseract-ocr/5/tessdata
     depends_on:
       api: { condition: service_healthy }
       kafka: { condition: service_started }

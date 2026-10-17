@@ -1,0 +1,36 @@
+# Example only. Do not apply until model/code/data licences and billing are approved.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: fraudlens-video-inference
+  annotations:
+    run.googleapis.com/launch-stage: BETA
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "1"
+        run.googleapis.com/gpu-zonal-redundancy-disabled: "true"
+    spec:
+      containerConcurrency: 1
+      serviceAccountName: fraudlens-video-inference
+      nodeSelector:
+        run.googleapis.com/accelerator: nvidia-l4
+      containers:
+        - image: europe-west4-docker.pkg.dev/PROJECT_ID/fraudlens/video-inference:VERSION
+          resources:
+            limits:
+              cpu: "8"
+              memory: 32Gi
+              nvidia.com/gpu: "1"
+          env:
+            - name: MODEL_CONFIG
+              value: /config/models.yaml
+            - name: INPUT_BUCKET
+              value: fraudlens-video-evidence
+  traffic:
+    - percent: 100
+      latestRevision: true
+# Deploy in europe-west4 with unauthenticated access disabled. Grant only the API service
+# account roles/run.invoker and bucket objectViewer. Configure bucket lifecycle retention.

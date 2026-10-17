@@ -190,3 +190,36 @@ class PublicIntelligence(BaseModel):
     status: str
     facts: dict[str, object]
     fetched_at: datetime
+
+
+class GmailAuthorization(BaseModel):
+    authorization_url: str
+
+
+class GmailConnection(BaseModel):
+    connected: bool
+    email_address: str | None = None
+    status: str
+    scopes: list[str] = Field(default_factory=list)
+    connected_at: datetime | None = None
+    last_sync_at: datetime | None = None
+    last_error: str | None = None
+
+
+class GmailSyncRequest(BaseModel):
+    case_id: str = Field(min_length=3, max_length=100)
+    label_ids: list[str] = Field(default_factory=list, max_length=20)
+    sender: str | None = Field(default=None, max_length=320)
+    after: str | None = Field(default=None, pattern=r"^\d{4}/\d{2}/\d{2}$")
+    before: str | None = Field(default=None, pattern=r"^\d{4}/\d{2}/\d{2}$")
+    has_attachment: bool | None = None
+    max_messages: int = Field(default=25, ge=1, le=100)
+    page_token: str | None = Field(default=None, max_length=2048)
+
+
+class GmailSyncResult(BaseModel):
+    imported_messages: int
+    imported_attachments: int
+    duplicate_messages: int
+    failed_messages: list[dict[str, str]]
+    next_page_token: str | None = None

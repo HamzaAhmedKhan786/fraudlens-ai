@@ -12,6 +12,7 @@ from fraudlens.agents.llm import (
 from fraudlens.agents.risk import RiskEngine
 from fraudlens.config import get_settings
 from fraudlens.events import InMemoryEventPublisher, KafkaEventPublisher
+from fraudlens.gmail import GmailConnector
 from fraudlens.ingestion import IngestionService
 from fraudlens.orchestrator import InvestigationOrchestrator
 from fraudlens.parsers import EvidenceParser
@@ -81,7 +82,12 @@ def get_ingestion_service() -> IngestionService:
         settings=get_settings(),
         storage=get_storage(),
         scanner=get_scanner(),
-        parser=EvidenceParser(),
+        parser=EvidenceParser(get_settings()),
         publisher=get_publisher(),
         orchestrator=get_orchestrator(),
     )
+
+
+@lru_cache
+def get_gmail_connector() -> GmailConnector:
+    return GmailConnector(get_settings(), get_ingestion_service())

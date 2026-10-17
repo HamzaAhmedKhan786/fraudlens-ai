@@ -72,6 +72,7 @@ class IngestionService:
         existing = await session.scalar(
             select(UploadRecord).where(
                 UploadRecord.tenant_id == principal.tenant_id,
+                UploadRecord.case_id == case_id,
                 UploadRecord.sha256 == digest,
             )
         )

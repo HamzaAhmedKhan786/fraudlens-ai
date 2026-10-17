@@ -1,0 +1,17 @@
+experimental: true
+face_detection:
+  adapter: retinaface
+  model_version: unconfigured
+frame_sampling:
+  fps: 1.0
+visual_detection:
+  adapter: sbi-or-xception
+  model_version: unconfigured
+temporal_detection:
+  adapter: ftcn
+  model_version: unconfigured
+licensing:
+  weights_bundled: false
+  datasets_bundled: false
+  approval_required: true
+  note: Verify code, weight, and training-data licences before commercial use.

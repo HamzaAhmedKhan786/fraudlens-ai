@@ -5,6 +5,7 @@ import "./ingestion.css";
 import "./workflow.css";
 import "./risk-gauge.css";
 import "./intelligence.css";
+import "./connectors.css";
 
 export const metadata = {
   title: "FraudLens AI | Investigation Console",
