@@ -45,6 +45,8 @@ export type WorkspaceSettings = { mandatory_human_review: boolean; llm_narrative
 export type UploadSummary = { id: string; case_id: string; filename: string; declared_content_type: string | null; detected_content_type: string; size_bytes: number; sha256: string; status: string; scan_status: string; processing_attempts: number; extracted: Record<string, unknown>; error: string | null; object_available: boolean; retention_expires_at: string; metadata_expires_at: string; created_at: string; updated_at: string };
 export type UploadList = { items: UploadSummary[]; total: number };
 export type PublicIntelligence = { id: string; indicator_type: string; indicator: string; provider: string; source_uri: string; status: string; facts: Record<string, unknown>; fetched_at: string };
+export type GmailConnection = { connected: boolean; email_address: string | null; status: string; scopes: string[]; connected_at: string | null; last_sync_at: string | null; last_error: string | null };
+export type GmailSyncResult = { imported_messages: number; imported_attachments: number; duplicate_messages: number; failed_messages: { message_id: string; error: string }[]; next_page_token: string | null };
 
 export async function backendFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${backendBaseUrl}${path}`, {

@@ -5,14 +5,19 @@ from email import policy
 from email.parser import BytesParser
 from io import BytesIO
 
+from fraudlens.config import Settings
+
 
 @dataclass(frozen=True)
 class ParsedEvidence:
     kind: str
-    attributes: dict[str, str | int | float | bool | list[str]]
+    attributes: dict[str, object]
 
 
 class EvidenceParser:
+    def __init__(self, settings: Settings | None = None) -> None:
+        self.settings = settings or Settings(ocr_enabled=False)
+
     def parse(self, content_type: str, data: bytes) -> ParsedEvidence:
         parsers: dict[str, Callable[[bytes], ParsedEvidence]] = {
             "message/rfc822": self._email,
@@ -40,6 +45,11 @@ class EvidenceParser:
                     bodies.append(part.get_content())
                 except (LookupError, UnicodeError):
                     pass
+        authentication = "\n".join(
+            str(value) for value in message.get_all("Authentication-Results", [])
+        )
+        received_spf = "\n".join(str(value) for value in message.get_all("Received-SPF", []))
+        auth_lower = authentication.lower()
         return ParsedEvidence(
             "email",
             {
@@ -50,6 +60,10 @@ class EvidenceParser:
                 "message_id": str(message.get("Message-ID", ""))[:500],
                 "attachments": attachments[:100],
                 "text_excerpt": "\n".join(bodies)[:10_000],
+                "authentication_results": authentication[:4000],
+                "spf_pass": "spf=pass" in auth_lower or "pass" in received_spf.lower(),
+                "dkim_pass": "dkim=pass" in auth_lower,
+                "dmarc_pass": "dmarc=pass" in auth_lower,
             },
         )
 
@@ -58,6 +72,19 @@ class EvidenceParser:
 
         reader = PdfReader(BytesIO(data), strict=False)
         text = "\n".join((page.extract_text() or "") for page in reader.pages)
+        ocr = (
+            self._ocr_pdf(data, text)
+            if self.settings.ocr_enabled and len(text.strip()) < 40
+            else {
+                "ocr_status": "NOT_REQUIRED" if text.strip() else "DISABLED",
+                "ocr_text": "",
+                "ocr_language": "unknown",
+                "ocr_word_confidence": None,
+                "ocr_pages": [],
+                "ocr_error": None,
+            }
+        )
+        combined_text = text or str(ocr.get("ocr_text", ""))
         metadata = reader.metadata or {}
         return ParsedEvidence(
             "document",
@@ -66,9 +93,10 @@ class EvidenceParser:
                 "title": str(metadata.get("/Title", ""))[:500],
                 "author": str(metadata.get("/Author", ""))[:500],
                 "producer": str(metadata.get("/Producer", ""))[:500],
-                "text_excerpt": text[:10_000],
+                "text_excerpt": combined_text[:10_000],
                 "encrypted": bool(reader.is_encrypted),
-                **self._document_signals(text),
+                **ocr,
+                **self._document_signals(combined_text),
             },
         )
 
@@ -112,6 +140,18 @@ class EvidenceParser:
                 str(ExifTags.TAGS.get(key, key)): str(value)[:500]
                 for key, value in image.getexif().items()
             }
+            ocr = (
+                self._ocr_images([image.copy()])
+                if self.settings.ocr_enabled
+                else {
+                    "ocr_status": "DISABLED",
+                    "ocr_text": "",
+                    "ocr_language": "unknown",
+                    "ocr_word_confidence": None,
+                    "ocr_pages": [],
+                    "ocr_error": None,
+                }
+            )
             return ParsedEvidence(
                 "image",
                 {
@@ -120,8 +160,117 @@ class EvidenceParser:
                     "format": image.format or "unknown",
                     "mode": image.mode,
                     "exif_keys": sorted(exif.keys())[:100],
+                    **ocr,
+                    **self._document_signals(str(ocr.get("ocr_text", ""))),
                 },
             )
+
+    def _ocr_pdf(self, data: bytes, existing_text: str) -> dict[str, object]:
+        try:
+            from pdf2image import convert_from_bytes
+
+            images = convert_from_bytes(
+                data,
+                first_page=1,
+                last_page=self.settings.ocr_max_pages,
+                poppler_path=self.settings.poppler_path,
+                dpi=220,
+            )
+            return self._ocr_images(images, existing_text)
+        except Exception as exc:
+            return self._ocr_failure(exc)
+
+    def _ocr_images(self, images, hint_text: str = "") -> dict[str, object]:
+        try:
+            import pytesseract
+            from pytesseract import Output
+
+            pytesseract.pytesseract.tesseract_cmd = self.settings.tesseract_cmd
+            languages, detected = self._select_ocr_languages(images[0], hint_text)
+            config = ""
+            if self.settings.tessdata_prefix:
+                config = f"--tessdata-dir {self.settings.tessdata_prefix}"
+            pages: list[dict[str, object]] = []
+            all_text: list[str] = []
+            confidences: list[float] = []
+            for page_number, image in enumerate(images, start=1):
+                result = pytesseract.image_to_data(
+                    image, lang=languages, config=config, output_type=Output.DICT
+                )
+                words: list[str] = []
+                page_confidences: list[float] = []
+                for word, confidence in zip(result["text"], result["conf"], strict=False):
+                    word = str(word).strip()
+                    try:
+                        numeric_confidence = float(confidence)
+                    except (TypeError, ValueError):
+                        continue
+                    if word and numeric_confidence >= 0:
+                        words.append(word)
+                        page_confidences.append(numeric_confidence)
+                        confidences.append(numeric_confidence)
+                page_text = " ".join(words)
+                all_text.append(page_text)
+                pages.append(
+                    {
+                        "page": page_number,
+                        "text": page_text[:10_000],
+                        "word_confidence": round(sum(page_confidences) / len(page_confidences), 2)
+                        if page_confidences
+                        else None,
+                    }
+                )
+            return {
+                "ocr_status": "COMPLETED",
+                "ocr_text": "\n".join(all_text)[:50_000],
+                "ocr_language": detected,
+                "ocr_languages_used": languages.split("+"),
+                "ocr_word_confidence": round(sum(confidences) / len(confidences), 2)
+                if confidences
+                else None,
+                "ocr_pages": pages,
+                "ocr_error": None,
+                "ocr_authenticity_verified": False,
+            }
+        except Exception as exc:
+            return self._ocr_failure(exc)
+
+    def _select_ocr_languages(self, image, hint_text: str) -> tuple[str, str]:
+        configured = self.settings.ocr_languages.split("+")
+        if re.search(r"[\u0600-\u06ff]", hint_text):
+            selected = [language for language in ("ara", "urd") if language in configured]
+            return "+".join(selected or configured), "Arabic script"
+        try:
+            import pytesseract
+
+            osd = pytesseract.image_to_osd(image)
+            script_match = re.search(r"Script:\s*([^\n]+)", osd)
+            script = script_match.group(1).strip() if script_match else "unknown"
+            if script == "Arabic":
+                selected = [language for language in ("ara", "urd") if language in configured]
+                return "+".join(selected or configured), "Arabic script"
+            if script == "Latin":
+                selected = [
+                    language
+                    for language in ("eng", "deu", "spa", "ita", "fra")
+                    if language in configured
+                ]
+                return "+".join(selected or configured), "Latin script"
+            return "+".join(configured), script
+        except Exception:
+            return "+".join(configured), "unknown"
+
+    @staticmethod
+    def _ocr_failure(exc: Exception) -> dict[str, object]:
+        return {
+            "ocr_status": "FAILED",
+            "ocr_text": "",
+            "ocr_language": "unknown",
+            "ocr_word_confidence": None,
+            "ocr_pages": [],
+            "ocr_error": str(exc)[:500],
+            "ocr_authenticity_verified": False,
+        }
 
     @staticmethod
     def _document_signals(text: str) -> dict[str, bool | list[str]]:

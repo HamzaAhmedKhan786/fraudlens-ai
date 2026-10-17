@@ -29,7 +29,7 @@ class Evidence(BaseModel):
     id: str
     kind: str
     source: str
-    attributes: dict[str, str | int | float | bool | list[str]] = Field(default_factory=dict)
+    attributes: dict[str, object] = Field(default_factory=dict)
     sha256: str | None = None
 
 

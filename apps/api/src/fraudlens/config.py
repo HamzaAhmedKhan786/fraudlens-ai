@@ -42,6 +42,21 @@ class Settings(BaseSettings):
     processing_inline: bool = True
     upload_retention_days: int = Field(default=30, ge=1)
     metadata_retention_days: int = Field(default=180, ge=1)
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    google_redirect_uri: str = "http://localhost:8000/api/v1/connectors/google/callback"
+    google_gmail_scopes: str = "https://www.googleapis.com/auth/gmail.readonly"
+    google_token_encryption_key: str | None = None
+    oauth_state_ttl_seconds: int = Field(default=600, ge=60, le=3600)
+    ocr_enabled: bool = False
+    ocr_languages: str = "eng"
+    tesseract_cmd: str = "tesseract"
+    tessdata_prefix: str | None = None
+    poppler_path: str | None = None
+    ocr_max_pages: int = Field(default=20, ge=1, le=200)
+    video_inference_enabled: bool = False
+    video_inference_url: str | None = None
+    video_inference_model: str = "unconfigured"
 
     @model_validator(mode="after")
     def validate_runtime_configuration(self) -> "Settings":
@@ -67,7 +82,17 @@ class Settings(BaseSettings):
                 raise ValueError("Production requires PostgreSQL; SQLite is development-only")
             if self.object_storage_backend == "filesystem":
                 raise ValueError("Production requires durable object storage such as MinIO or S3")
+            if self.google_client_id and not self.google_token_encryption_key:
+                raise ValueError("GOOGLE_TOKEN_ENCRYPTION_KEY is required for Gmail in production")
         return self
+
+    @property
+    def gmail_scopes(self) -> list[str]:
+        return [
+            scope.strip()
+            for scope in self.google_gmail_scopes.replace(",", " ").split()
+            if scope.strip()
+        ]
 
     @property
     def allowed_origins(self) -> list[str]:

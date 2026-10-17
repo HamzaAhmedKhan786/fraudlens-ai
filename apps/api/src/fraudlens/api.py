@@ -1,14 +1,18 @@
 from datetime import UTC, datetime
+from pathlib import Path
+from shutil import which
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fraudlens.auth import Principal, require_principal
 from fraudlens.config import get_settings as get_runtime_settings
 from fraudlens.database import get_session
-from fraudlens.dependencies import get_ingestion_service, get_orchestrator
+from fraudlens.dependencies import get_gmail_connector, get_ingestion_service, get_orchestrator
 from fraudlens.domain.models import InvestigationReport, InvestigationRequest
+from fraudlens.gmail import GmailConnector
 from fraudlens.ingestion import IngestionService
 from fraudlens.orchestrator import InvestigationOrchestrator
 from fraudlens.public_intelligence import list_public_intelligence, lookup_domain
@@ -25,6 +29,10 @@ from fraudlens.schemas import (
     DomainLookup,
     EntityGraph,
     EvidenceCreate,
+    GmailAuthorization,
+    GmailConnection,
+    GmailSyncRequest,
+    GmailSyncResult,
     InvestigationSummary,
     ModelHealth,
     PolicyDefinition,
@@ -53,6 +61,56 @@ from fraudlens.services import (
 )
 
 router = APIRouter()
+
+
+@router.post("/connectors/google/authorize", response_model=GmailAuthorization)
+async def authorize_google(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+    connector: Annotated[GmailConnector, Depends(get_gmail_connector)],
+) -> GmailAuthorization:
+    return GmailAuthorization(
+        authorization_url=await connector.authorization_url(session, principal)
+    )
+
+
+@router.get("/connectors/google/callback", include_in_schema=False)
+async def google_callback(
+    state: Annotated[str, Query(min_length=20, max_length=500)],
+    code: Annotated[str, Query(min_length=1, max_length=4096)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    connector: Annotated[GmailConnector, Depends(get_gmail_connector)],
+) -> RedirectResponse:
+    return RedirectResponse(await connector.callback(session, state, code), status_code=303)
+
+
+@router.get("/connectors/google", response_model=GmailConnection)
+async def google_status(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+    connector: Annotated[GmailConnector, Depends(get_gmail_connector)],
+) -> GmailConnection:
+    return await connector.status(session, principal)
+
+
+@router.delete("/connectors/google", status_code=204)
+async def disconnect_google(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+    connector: Annotated[GmailConnector, Depends(get_gmail_connector)],
+) -> Response:
+    await connector.disconnect(session, principal)
+    return Response(status_code=204)
+
+
+@router.post("/connectors/google/sync", response_model=GmailSyncResult)
+async def sync_google(
+    payload: GmailSyncRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+    connector: Annotated[GmailConnector, Depends(get_gmail_connector)],
+) -> GmailSyncResult:
+    return await connector.sync(session, principal, payload)
 
 
 @router.get("/intelligence/public", response_model=list[PublicIntelligence])
@@ -267,6 +325,9 @@ async def get_model_health(
 ) -> list[ModelHealth]:
     now = datetime.now(UTC)
     settings = get_runtime_settings()
+    tesseract_available = (
+        bool(which(settings.tesseract_cmd)) or Path(settings.tesseract_cmd).is_file()
+    )
     return [
         ModelHealth(
             id="rules-2026-08",
@@ -303,12 +364,26 @@ async def get_model_health(
         ),
         ModelHealth(
             id="document-vision-model",
-            name="Document OCR & tamper vision",
+            name="Document OCR",
+            provider="Tesseract 5",
+            status="HEALTHY" if settings.ocr_enabled and tesseract_available else "NOT_CONFIGURED",
+            latency_ms=None,
+            last_checked=now,
+            detail=(
+                f"CPU OCR configured for {settings.ocr_languages}. "
+                "OCR is not authenticity verification."
+                if settings.ocr_enabled and tesseract_available
+                else "Enable OCR and install Tesseract with the configured language packs."
+            ),
+        ),
+        ModelHealth(
+            id="document-tamper-model",
+            name="Document tamper vision",
             provider="Adapter required",
             status="NOT_CONFIGURED",
             latency_ms=None,
             last_checked=now,
-            detail="Scanned-image OCR and pixel-level tamper detection require a validated model.",
+            detail="Pixel-level tamper detection still requires a separately validated model.",
         ),
         ModelHealth(
             id="deepfake-model",
