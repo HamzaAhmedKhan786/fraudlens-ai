@@ -1,7 +1,8 @@
+from collections import Counter
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fraudlens.auth import Principal, require_role
@@ -25,6 +26,7 @@ from fraudlens.schemas import (
     CaseSummary,
     CaseUpdate,
     DashboardMetrics,
+    DetectionSignal,
     EntityGraph,
     EvidenceCreate,
     GraphEdge,
@@ -355,20 +357,51 @@ async def investigate_case(
 
 async def dashboard(session: AsyncSession, principal: Principal) -> DashboardMetrics:
     cases = await list_cases(session, principal)
-    completed = await session.scalar(
-        select(func.count(InvestigationRecord.id))
+    investigation_rows = await session.scalars(
+        select(InvestigationRecord)
         .join(CaseRecord)
         .where(CaseRecord.tenant_id == principal.tenant_id)
+        .order_by(InvestigationRecord.created_at.desc())
+        .limit(200)
     )
+    investigations = investigation_rows.all()
+    signal_names = {
+        "email-security": "Email compromise",
+        "document-integrity": "Document & payment fraud",
+        "url-reputation": "Malicious URL",
+    }
+    signal_counts: Counter[str] = Counter()
+    confidences: list[float] = []
+    for investigation in investigations:
+        for finding in investigation.report.get("findings", []):
+            if not isinstance(finding, dict):
+                continue
+            agent = str(finding.get("agent", "other"))
+            signal_counts[signal_names.get(agent, "Other indicators")] += 1
+            confidence = finding.get("confidence")
+            if isinstance(confidence, int | float):
+                confidences.append(float(confidence))
+    signal_total = sum(signal_counts.values())
+    detection_signals = [
+        DetectionSignal(
+            name=name,
+            count=count,
+            share=round((count / signal_total) * 100, 1) if signal_total else 0,
+        )
+        for name, count in signal_counts.most_common(5)
+    ]
     average = sum(case.risk_score for case in cases) / len(cases) if cases else 0
     return DashboardMetrics(
         open_cases=sum(case.status in {"OPEN", "UNDER_REVIEW"} for case in cases),
         critical_cases=sum(case.severity == "CRITICAL" for case in cases),
         high_risk_cases=sum(case.severity in {"HIGH", "CRITICAL"} for case in cases),
-        completed_investigations=completed or 0,
+        completed_investigations=len(investigations),
         average_risk=round(average, 1),
-        agent_confidence=94.7,
+        agent_confidence=round((sum(confidences) / len(confidences)) * 100, 1)
+        if confidences
+        else 0,
         priority_cases=cases[:10],
+        detection_signals=detection_signals,
     )
 
 

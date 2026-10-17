@@ -30,6 +30,7 @@ export type DashboardMetrics = {
   average_risk: number;
   agent_confidence: number;
   priority_cases: CaseSummary[];
+  detection_signals: { name: string; count: number; share: number }[];
 };
 
 export type InvestigationSummary = { id: string; case_id: string; status: string; risk_score: number; severity: string; created_at: string };

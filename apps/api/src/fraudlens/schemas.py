@@ -60,6 +60,13 @@ class DashboardMetrics(BaseModel):
     average_risk: float
     agent_confidence: float
     priority_cases: list[CaseSummary]
+    detection_signals: list["DetectionSignal"]
+
+
+class DetectionSignal(BaseModel):
+    name: str
+    count: int
+    share: float
 
 
 class EvidenceCreate(Evidence):

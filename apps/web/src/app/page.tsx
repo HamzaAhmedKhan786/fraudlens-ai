@@ -8,7 +8,7 @@ import { NewInvestigationButton } from "./ui/new-investigation";
 
 const fallback: DashboardMetrics = {
   open_cases: 0, critical_cases: 0, high_risk_cases: 0, completed_investigations: 0,
-  average_risk: 0, agent_confidence: 0, priority_cases: [],
+  average_risk: 0, agent_confidence: 0, priority_cases: [], detection_signals: [],
 };
 
 const agents = [
@@ -105,7 +105,7 @@ export default async function Dashboard() {
           <section className="panel signals">
             <div className="panel-head"><div><h2>Detection signals</h2><p>Risk distribution across active cases</p></div><button>Last 7 days <ChevronDown size={14} /></button></div>
             <div className="signal-grid">
-              {[['Email compromise','34%','+8%'],['Document tampering','26%','+3%'],['Identity fraud','18%','−2%'],['Deepfake media','12%','+5%'],['Malicious URL','10%','−1%']].map(([name,value,delta], i)=><div key={name}><span><i className={`signal s${i}`} />{name}</span><strong>{value}</strong><em>{delta}</em><b><i style={{width:value}} /></b></div>)}
+              {dashboard.detection_signals.length ? dashboard.detection_signals.map((signal, i) => <div key={signal.name}><span><i className={`signal s${i}`} />{signal.name}</span><strong>{signal.share}%</strong><em>{signal.count} findings</em><b><i style={{width:`${signal.share}%`}} /></b></div>) : <div className="empty-state">No investigated findings yet.</div>}
             </div>
           </section>
         </div>
