@@ -8,6 +8,11 @@ def test_openai_provider_requires_api_key() -> None:
         Settings(llm_provider="openai", openai_api_key=None)
 
 
+def test_groq_provider_requires_api_key() -> None:
+    with pytest.raises(ValidationError, match="GROQ_API_KEY"):
+        Settings(llm_provider="groq", groq_api_key=None)
+
+
 def test_required_clamav_must_be_enabled() -> None:
     with pytest.raises(ValidationError, match="CLAMAV_ENABLED"):
         Settings(clamav_required=True, clamav_enabled=False)

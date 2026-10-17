@@ -321,7 +321,10 @@ async def investigate_case(
             for item in case.evidence
         ],
     )
-    report = await orchestrator.investigate(request)
+    workspace_settings = await get_workspace_settings(session, principal)
+    report = await orchestrator.investigate(
+        request, critical_threshold=workspace_settings.critical_risk_threshold
+    )
     session.add(
         InvestigationRecord(
             id=str(report.investigation_id),

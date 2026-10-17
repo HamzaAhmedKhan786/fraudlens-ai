@@ -71,6 +71,28 @@ def test_risk_engine_caps_score() -> None:
     assert RiskEngine().assess(findings).score == 100
 
 
+def test_tenant_critical_threshold_changes_classification_not_score() -> None:
+    from fraudlens.domain.models import Finding
+
+    findings = [
+        Finding(
+            agent="test",
+            code="THRESHOLD_RULE",
+            title="Risk",
+            explanation="Test",
+            severity=Severity.HIGH,
+            confidence=1,
+            risk_points=75,
+            evidence_ids=["e-1"],
+        )
+    ]
+    default = RiskEngine().assess(findings)
+    tenant_policy = RiskEngine().assess(findings, critical_threshold=70)
+    assert default.score == tenant_policy.score == 75
+    assert default.severity is Severity.HIGH
+    assert tenant_policy.severity is Severity.CRITICAL
+
+
 @pytest.mark.asyncio
 async def test_document_agent_scores_extracted_payment_pressure() -> None:
     from fraudlens.agents.base import AgentContext

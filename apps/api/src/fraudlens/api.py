@@ -258,13 +258,19 @@ async def get_model_health(
             detail="Ruleset 2026.08.1 loaded.",
         ),
         ModelHealth(
-            id="openai-narrative",
+            id="llm-narrative",
             name="Investigation Narrative",
-            provider="OpenAI / configurable",
+            provider={"openai": "OpenAI", "groq": "Groq"}.get(
+                settings.llm_provider, "Not configured"
+            ),
             status="STANDBY",
             latency_ms=None,
             last_checked=now,
-            detail="Enabled only when LLM_PROVIDER and credentials are configured.",
+            detail=(
+                f"Evidence-grounded narratives configured with {settings.llm_provider}."
+                if settings.llm_provider in {"openai", "groq"}
+                else "Enable OpenAI or Groq with provider credentials for cited narratives."
+            ),
         ),
         ModelHealth(
             id="document-extraction",

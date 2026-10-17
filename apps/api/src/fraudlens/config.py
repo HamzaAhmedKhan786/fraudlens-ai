@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     llm_provider: str = "disabled"
     openai_api_key: str | None = None
     openai_model: str = "gpt-5-mini"
+    groq_api_key: str | None = None
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+    groq_model: str = "openai/gpt-oss-20b"
     max_agent_steps: int = Field(default=12, ge=1, le=100)
     minimum_citation_coverage: float = Field(default=1.0, ge=0, le=1)
     max_upload_bytes: int = Field(default=52_428_800, ge=1)
@@ -44,6 +47,10 @@ class Settings(BaseSettings):
     def validate_runtime_configuration(self) -> "Settings":
         if self.llm_provider == "openai" and not self.openai_api_key:
             raise ValueError("OPENAI_API_KEY is required when LLM_PROVIDER=openai")
+        if self.llm_provider == "groq" and not self.groq_api_key:
+            raise ValueError("GROQ_API_KEY is required when LLM_PROVIDER=groq")
+        if self.llm_provider not in {"disabled", "openai", "groq"}:
+            raise ValueError("LLM_PROVIDER must be disabled, openai, or groq")
         if self.clamav_required and not self.clamav_enabled:
             raise ValueError("CLAMAV_ENABLED must be true when CLAMAV_REQUIRED=true")
         if not self.processing_inline and not self.kafka_enabled:

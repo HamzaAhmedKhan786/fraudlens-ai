@@ -81,6 +81,10 @@ names only. Enable the OpenAI provider only after setting `OPENAI_API_KEY`. Asyn
 processing requires Kafka, and required malware scanning requires ClamAV. Production startup
 rejects placeholder API keys, SQLite, and local filesystem evidence storage.
 
+Groq is also supported through its OpenAI-compatible Responses API. Set `LLM_PROVIDER=groq`,
+`GROQ_API_KEY`, and a supported `GROQ_MODEL`; the provider can generate cited narratives but cannot
+change deterministic findings or risk scores.
+
 ### Implemented API workflow
 
 ```text
