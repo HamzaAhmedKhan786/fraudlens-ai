@@ -110,6 +110,8 @@ record the actor supplied in `X-Actor`. Replace this service-key boundary with O
 connecting an enterprise identity provider.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for product and system boundaries.
+See [`docs/USE_CASES.md`](docs/USE_CASES.md) for operational fraud scenarios, risk-level semantics,
+malware behavior, and the integration roadmap.
 
 A production-oriented AI platform for detecting, investigating, scoring, and explaining fraud across **emails, documents, images, videos, audio, identities, URLs, and transaction-related evidence**.
 

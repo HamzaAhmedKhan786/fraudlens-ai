@@ -1,0 +1,80 @@
+.risk-hero {
+  gap: 20px;
+  padding: 20px 17px;
+  background: radial-gradient(circle at 12% 50%, rgba(255, 73, 103, 0.09), transparent 34%);
+}
+
+.risk-gauge {
+  position: relative;
+  width: 92px;
+  height: 92px;
+  flex: 0 0 92px;
+  filter: drop-shadow(0 0 15px rgba(255, 73, 103, 0.2));
+}
+
+.risk-gauge > svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.risk-track,
+.risk-progress {
+  fill: none;
+  stroke-width: 9;
+}
+
+.risk-track { stroke: #1d3047; }
+.risk-progress {
+  stroke: url("#risk-gradient");
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.5s ease;
+}
+
+.risk-gauge-value {
+  position: absolute;
+  inset: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 30%, #172942, #091625 72%);
+  box-shadow: inset 0 0 16px rgba(54, 124, 255, 0.12);
+}
+
+.risk-gauge-value svg {
+  color: #ff758b;
+  width: 15px;
+  height: 15px;
+  margin-bottom: 1px;
+}
+
+.risk-gauge-value strong { font-size: 23px; line-height: 1; letter-spacing: -1px; }
+.risk-gauge-value span {
+  margin-top: 2px;
+  color: #71839c;
+  font-size: 7px;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+}
+
+.risk-summary { display: flex; min-width: 0; flex-direction: column; }
+.risk-summary > span { color: #6f829a; font-size: 7px; letter-spacing: 1.2px; }
+.risk-summary > strong { margin: 4px 0 2px; font-size: 18px; }
+.risk-summary > strong.critical { color: #ff6079; }
+.risk-summary > strong.high { color: #ff9a54; }
+.risk-summary > strong.medium { color: #ffd359; }
+.risk-summary > strong.low { color: #4ad5a3; }
+.risk-summary p { margin: 0; color: #8192a8; font-size: 8px; }
+
+.risk-scale { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 9px; }
+.risk-scale i {
+  padding: 3px 5px;
+  border: 1px solid #263a52;
+  border-radius: 8px;
+  background: #0a1728;
+  color: #71849a;
+  font-size: 6px;
+  font-style: normal;
+}
