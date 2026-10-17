@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  Activity, Bell, ChevronDown, FileWarning, GitBranch, LayoutDashboard,
+  Activity, Bell, ChevronDown, FileWarning, GitBranch, Globe2, LayoutDashboard,
   Search, Settings, ShieldCheck, Sparkles, UploadCloud, Users, Workflow,
 } from "lucide-react";
 import Link from "next/link";
@@ -14,7 +14,7 @@ const sections = [
     ["/investigations", "Investigations", Workflow], ["/graph", "Entity graph", GitBranch],
   ] },
   { group: "INTELLIGENCE", items: [
-    ["/agents", "Agent activity", Sparkles], ["/policies", "Detection policies", ShieldCheck],
+    ["/intelligence", "Public intelligence", Globe2], ["/agents", "Agent activity", Sparkles], ["/policies", "Detection policies", ShieldCheck],
     ["/models", "Model health", Activity],
   ] },
   { group: "ADMIN", items: [

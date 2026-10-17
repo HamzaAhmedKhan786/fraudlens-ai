@@ -11,6 +11,7 @@ from fraudlens.dependencies import get_ingestion_service, get_orchestrator
 from fraudlens.domain.models import InvestigationReport, InvestigationRequest
 from fraudlens.ingestion import IngestionService
 from fraudlens.orchestrator import InvestigationOrchestrator
+from fraudlens.public_intelligence import list_public_intelligence, lookup_domain
 from fraudlens.schemas import (
     AgentStatus,
     AuditEntry,
@@ -21,12 +22,14 @@ from fraudlens.schemas import (
     CaseSummary,
     CaseUpdate,
     DashboardMetrics,
+    DomainLookup,
     EntityGraph,
     EvidenceCreate,
     InvestigationSummary,
     ModelHealth,
     PolicyDefinition,
     PolicyUpdate,
+    PublicIntelligence,
     UploadList,
     UploadSummary,
     WorkspaceSettings,
@@ -50,6 +53,23 @@ from fraudlens.services import (
 )
 
 router = APIRouter()
+
+
+@router.get("/intelligence/public", response_model=list[PublicIntelligence])
+async def get_public_intelligence(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+) -> list[PublicIntelligence]:
+    return await list_public_intelligence(session, principal)
+
+
+@router.post("/intelligence/domain", response_model=PublicIntelligence, status_code=201)
+async def post_domain_lookup(
+    payload: DomainLookup,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+) -> PublicIntelligence:
+    return await lookup_domain(session, principal, payload.domain)
 
 
 @router.get("/health")

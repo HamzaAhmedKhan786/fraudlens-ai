@@ -7,6 +7,7 @@ import { getDashboard, type DashboardMetrics } from "@/lib/backend";
 import { NewInvestigationButton } from "./ui/new-investigation";
 
 const fallback: DashboardMetrics = {
+  data_source: "UNAVAILABLE",
   open_cases: 0, critical_cases: 0, high_risk_cases: 0, completed_investigations: 0,
   average_risk: 0, agent_confidence: 0, priority_cases: [], detection_signals: [],
 };
@@ -75,7 +76,7 @@ export default async function Dashboard() {
         </header>
 
         <div className="content">
-          <div className="heading-row"><div><p className="eyebrow">COMMAND CENTER</p><h1>Fraud operations overview</h1><p>Monitor risk, investigations, and agent performance across your organization.</p></div><NewInvestigationButton /></div>
+          <div className="heading-row"><div><p className="eyebrow">COMMAND CENTER · {dashboard.data_source.replaceAll("_", " ")}</p><h1>Fraud operations overview</h1><p>{dashboard.data_source === "DEMO_DATASET" ? "Development sample records—not live fraud intelligence. Add uploaded evidence or public intelligence to work with sourced data." : "Monitor risk, investigations, and agent performance across your organization."}</p></div><NewInvestigationButton /></div>
 
           <section className="metrics">
             <article><span>OPEN CASES</span><div><strong>{dashboard.open_cases}</strong><em className="up">Live</em></div><p><b style={{width:"68%"}} />Persisted case queue</p></article>
