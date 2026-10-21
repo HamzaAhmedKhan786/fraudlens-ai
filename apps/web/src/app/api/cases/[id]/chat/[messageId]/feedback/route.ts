@@ -1,0 +1,2 @@
+import{backendFetch}from"@/lib/backend";
+export async function POST(request:Request,{params}:{params:Promise<{id:string;messageId:string}>}){const{id,messageId}=await params;try{return Response.json(await backendFetch(`/cases/${encodeURIComponent(id)}/chat/${encodeURIComponent(messageId)}/feedback`,{method:"POST",body:JSON.stringify(await request.json())}),{status:201})}catch(error){return Response.json({detail:error instanceof Error?error.message:"Feedback failed"},{status:502})}}

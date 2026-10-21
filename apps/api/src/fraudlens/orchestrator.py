@@ -16,12 +16,14 @@ class InvestigationOrchestrator:
         narrative: NarrativeGenerator,
         publisher: EventPublisher,
         max_steps: int = 12,
+        agent_timeout_seconds: int = 30,
     ) -> None:
         self._agents = agents
         self._risk_engine = risk_engine
         self._narrative = narrative
         self._publisher = publisher
         self._max_steps = max_steps
+        self._agent_timeout_seconds = agent_timeout_seconds
 
     async def investigate(
         self, request: InvestigationRequest, critical_threshold: int = 80
@@ -35,7 +37,9 @@ class InvestigationOrchestrator:
         async def run(agent: DeterministicAgent) -> tuple[list[Finding], AgentTrace]:
             started = perf_counter()
             try:
-                findings = await agent.analyze(context)
+                findings = await asyncio.wait_for(
+                    agent.analyze(context), timeout=self._agent_timeout_seconds
+                )
                 status = "COMPLETED"
             except Exception:
                 findings = []

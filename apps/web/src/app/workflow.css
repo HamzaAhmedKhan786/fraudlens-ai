@@ -9,3 +9,4 @@
 .upload-item > div:last-child { display: flex; gap: 6px; }
 .upload-item > div:last-child a,
 .upload-item > div:last-child button { border: 1px solid #31577c; background: #10263c; color: #78baff; border-radius: 5px; padding: 6px 9px; font-size: 8px; }
+.review-record{grid-template-columns:.7fr 1.5fr .8fr .8fr 2fr}.review-actions{display:flex;flex-wrap:wrap;gap:4px}.review-actions button{border:1px solid #294766;background:#0b1b2e;color:#8fc3ff;border-radius:4px;padding:4px 6px;font-size:7px}

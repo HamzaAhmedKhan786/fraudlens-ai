@@ -1,5 +1,5 @@
 from collections import Counter
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -12,11 +12,14 @@ from fraudlens.database import (
     CaseRecord,
     EvidenceRecord,
     InvestigationRecord,
+    OutboxEventRecord,
     PolicyRecord,
+    ReviewRequestRecord,
     WorkspaceSettingsRecord,
 )
 from fraudlens.domain.models import Evidence, InvestigationRequest
 from fraudlens.orchestrator import InvestigationOrchestrator
+from fraudlens.platform_services import consume_entitlement
 from fraudlens.schemas import (
     AuditEntry,
     CaseComment,
@@ -26,6 +29,8 @@ from fraudlens.schemas import (
     CaseSummary,
     CaseUpdate,
     DashboardMetrics,
+    DeleteRequest,
+    DeletionResult,
     DetectionSignal,
     EntityGraph,
     EvidenceCreate,
@@ -34,6 +39,9 @@ from fraudlens.schemas import (
     InvestigationSummary,
     PolicyDefinition,
     PolicyUpdate,
+    ReviewDecision,
+    ReviewRequest,
+    ReviewRequestCreate,
     WorkspaceSettings,
 )
 
@@ -44,12 +52,14 @@ def _summary(case: CaseRecord) -> CaseSummary:
         tenant_id=case.tenant_id,
         subject=case.subject,
         case_type=case.case_type,
+        analysis_modules=case.analysis_modules,
+        evidence_sources=case.evidence_sources,
         status=case.status,
         risk_score=case.risk_score,
         severity=case.severity,
         assignee=case.assignee,
         disposition=case.disposition,
-        evidence_count=len(case.evidence),
+        evidence_count=sum(item.deleted_at is None for item in case.evidence),
         created_at=case.created_at,
         updated_at=case.updated_at,
     )
@@ -76,19 +86,29 @@ async def _audit(
 async def list_cases(session: AsyncSession, principal: Principal) -> list[CaseSummary]:
     result = await session.scalars(
         select(CaseRecord)
-        .where(CaseRecord.tenant_id == principal.tenant_id)
+        .where(CaseRecord.tenant_id == principal.tenant_id, CaseRecord.deleted_at.is_(None))
         .order_by(CaseRecord.risk_score.desc(), CaseRecord.created_at.desc())
     )
     return [_summary(item) for item in result.unique().all()]
 
 
-async def get_case(session: AsyncSession, principal: Principal, case_id: str) -> CaseRecord:
-    case = await session.scalar(
-        select(CaseRecord).where(
-            CaseRecord.id == case_id,
-            CaseRecord.tenant_id == principal.tenant_id,
-        )
+async def list_deleted_cases(session: AsyncSession, principal: Principal) -> list[CaseSummary]:
+    require_role(principal, "admin")
+    result = await session.scalars(
+        select(CaseRecord)
+        .where(CaseRecord.tenant_id == principal.tenant_id, CaseRecord.deleted_at.is_not(None))
+        .order_by(CaseRecord.deleted_at.desc())
     )
+    return [_summary(item) for item in result.unique().all()]
+
+
+async def get_case(
+    session: AsyncSession, principal: Principal, case_id: str, *, include_deleted: bool = False
+) -> CaseRecord:
+    filters = [CaseRecord.id == case_id, CaseRecord.tenant_id == principal.tenant_id]
+    if not include_deleted:
+        filters.append(CaseRecord.deleted_at.is_(None))
+    case = await session.scalar(select(CaseRecord).where(*filters))
     if not case:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
     return case
@@ -109,6 +129,7 @@ async def get_case_detail(session: AsyncSession, principal: Principal, case_id: 
                 sha256=item.sha256,
             )
             for item in case.evidence
+            if item.deleted_at is None
         ],
         comments=[
             CaseComment(id=item.id, author=item.author, body=item.body, created_at=item.created_at)
@@ -133,6 +154,71 @@ async def update_case(
     await _audit(session, principal, "case.updated", case.id, changes)
     await session.commit()
     return await get_case_detail(session, principal, case_id)
+
+
+async def soft_delete_case(
+    session: AsyncSession, principal: Principal, case_id: str, payload: DeleteRequest
+) -> DeletionResult:
+    require_role(principal, "admin")
+    case = await get_case(session, principal, case_id)
+    now = datetime.now(UTC)
+    case.deleted_at = now
+    case.deleted_by = principal.subject
+    case.delete_reason = payload.reason.strip()
+    await _audit(session, principal, "case.soft_deleted", case.id, {"reason": case.delete_reason})
+    await session.commit()
+    return DeletionResult(deleted_ids=[case.id], recovery_until=now + timedelta(days=30))
+
+
+async def restore_case(session: AsyncSession, principal: Principal, case_id: str) -> CaseDetail:
+    require_role(principal, "admin")
+    case = await get_case(session, principal, case_id, include_deleted=True)
+    if case.deleted_at is None:
+        raise HTTPException(status_code=409, detail="Case is not deleted")
+    if case.deleted_at < datetime.now(UTC) - timedelta(days=30):
+        raise HTTPException(status_code=410, detail="Case recovery window expired")
+    case.deleted_at = None
+    case.deleted_by = None
+    case.delete_reason = None
+    await _audit(session, principal, "case.restored", case.id)
+    await session.commit()
+    return await get_case_detail(session, principal, case_id)
+
+
+async def soft_delete_evidence(
+    session: AsyncSession,
+    principal: Principal,
+    case_id: str,
+    evidence_ids: list[str],
+    reason: str,
+) -> DeletionResult:
+    require_role(principal, "analyst", "reviewer", "admin")
+    await get_case(session, principal, case_id)
+    rows = list(
+        await session.scalars(
+            select(EvidenceRecord).where(
+                EvidenceRecord.case_id == case_id,
+                EvidenceRecord.id.in_(evidence_ids),
+                EvidenceRecord.deleted_at.is_(None),
+            )
+        )
+    )
+    if len(rows) != len(set(evidence_ids)):
+        raise HTTPException(status_code=404, detail="One or more evidence items were not found")
+    now = datetime.now(UTC)
+    for row in rows:
+        row.deleted_at = now
+        row.deleted_by = principal.subject
+        row.delete_reason = reason.strip()
+    await _audit(
+        session,
+        principal,
+        "evidence.soft_deleted",
+        case_id,
+        {"evidence_ids": evidence_ids, "reason": reason.strip()},
+    )
+    await session.commit()
+    return DeletionResult(deleted_ids=evidence_ids, recovery_until=now + timedelta(days=30))
 
 
 async def add_case_comment(
@@ -265,8 +351,26 @@ async def create_case(
         tenant_id=principal.tenant_id,
         subject=payload.subject,
         case_type=payload.case_type,
+        analysis_modules=payload.analysis_modules,
+        evidence_sources=payload.evidence_sources,
+    )
+    await consume_entitlement(
+        session,
+        principal,
+        "investigations",
+        1,
+        f"case-create:{principal.tenant_id}:{case.id}",
+        case.id,
     )
     session.add(case)
+    session.add(
+        OutboxEventRecord(
+            tenant_id=principal.tenant_id,
+            topic="fraudlens.case.created.v1",
+            aggregate_id=case.id,
+            payload={"case_id": case.id, "case_type": case.case_type},
+        )
+    )
     await _audit(session, principal, "case.created", case.id)
     await session.commit()
     await session.refresh(case, attribute_names=["evidence", "investigations"])
@@ -304,7 +408,8 @@ async def investigate_case(
     orchestrator: InvestigationOrchestrator,
 ):
     case = await get_case(session, principal, case_id)
-    if not case.evidence:
+    active_evidence = [item for item in case.evidence if item.deleted_at is None]
+    if not active_evidence:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="At least one evidence item is required",
@@ -320,7 +425,7 @@ async def investigate_case(
                 attributes=item.attributes,
                 sha256=item.sha256,
             )
-            for item in case.evidence
+            for item in active_evidence
         ],
     )
     workspace_settings = await get_workspace_settings(session, principal)
@@ -337,10 +442,40 @@ async def investigate_case(
             report=report.model_dump(mode="json"),
         )
     )
+    session.add(
+        OutboxEventRecord(
+            tenant_id=principal.tenant_id,
+            topic="fraudlens.investigation.completed.v1",
+            aggregate_id=case.id,
+            payload={
+                "case_id": case.id,
+                "investigation_id": str(report.investigation_id),
+                "risk_score": report.risk.score,
+            },
+        )
+    )
     case.risk_score = report.risk.score
     case.severity = report.risk.severity
     case.status = "UNDER_REVIEW"
     case.updated_at = datetime.now(UTC)
+    if report.risk.severity in {"HIGH", "CRITICAL"}:
+        pending = await session.scalar(
+            select(ReviewRequestRecord).where(
+                ReviewRequestRecord.case_id == case.id,
+                ReviewRequestRecord.tenant_id == principal.tenant_id,
+                ReviewRequestRecord.status == "PENDING",
+            )
+        )
+        if not pending:
+            session.add(
+                ReviewRequestRecord(
+                    case_id=case.id,
+                    tenant_id=principal.tenant_id,
+                    requester="system",
+                    request_type="AUTOMATED_RISK",
+                    reason=f"{report.risk.severity} automated risk requires human review",
+                )
+            )
     await _audit(
         session,
         principal,
@@ -353,6 +488,120 @@ async def investigate_case(
     )
     await session.commit()
     return report
+
+
+def _review(row: ReviewRequestRecord) -> ReviewRequest:
+    return ReviewRequest(
+        id=row.id,
+        case_id=row.case_id,
+        requester=row.requester,
+        request_type=row.request_type,
+        reason=row.reason,
+        status=row.status,
+        reviewer=row.reviewer,
+        decision_reason=row.decision_reason,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+async def request_review(
+    session: AsyncSession, principal: Principal, case_id: str, payload: ReviewRequestCreate
+) -> ReviewRequest:
+    await get_case(session, principal, case_id)
+    existing = await session.scalar(
+        select(ReviewRequestRecord).where(
+            ReviewRequestRecord.case_id == case_id,
+            ReviewRequestRecord.tenant_id == principal.tenant_id,
+            ReviewRequestRecord.requester == principal.subject,
+            ReviewRequestRecord.request_type == payload.request_type,
+            ReviewRequestRecord.status.in_(["PENDING", "MORE_EVIDENCE"]),
+        )
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="An active review request already exists")
+    row = ReviewRequestRecord(
+        case_id=case_id,
+        tenant_id=principal.tenant_id,
+        requester=principal.subject,
+        request_type=payload.request_type,
+        reason=payload.reason,
+    )
+    session.add(row)
+    await session.flush()
+    await _audit(
+        session,
+        principal,
+        "review.requested",
+        row.id,
+        {"case_id": case_id, "type": payload.request_type},
+    )
+    await session.commit()
+    return _review(row)
+
+
+async def list_reviews(session: AsyncSession, principal: Principal) -> list[ReviewRequest]:
+    rows = (
+        await session.scalars(
+            select(ReviewRequestRecord)
+            .where(ReviewRequestRecord.tenant_id == principal.tenant_id)
+            .order_by(ReviewRequestRecord.created_at.desc())
+        )
+    ).all()
+    return [_review(row) for row in rows]
+
+
+async def decide_review(
+    session: AsyncSession, principal: Principal, review_id: str, payload: ReviewDecision
+) -> ReviewRequest:
+    require_role(principal, "admin", "reviewer")
+    row = await session.scalar(
+        select(ReviewRequestRecord)
+        .where(
+            ReviewRequestRecord.id == review_id,
+            ReviewRequestRecord.tenant_id == principal.tenant_id,
+        )
+        .with_for_update()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Review request not found")
+    if row.requester == principal.subject:
+        raise HTTPException(status_code=403, detail="Reviewers cannot decide their own request")
+    if row.status not in {"PENDING", "MORE_EVIDENCE"}:
+        raise HTTPException(status_code=409, detail="Review request is already decided")
+    statuses = {
+        "APPROVE_LEGITIMATE": "APPROVED_LEGITIMATE",
+        "CONFIRM_SUSPICIOUS": "CONFIRMED_SUSPICIOUS",
+        "REJECT": "REJECTED",
+        "REQUEST_EVIDENCE": "MORE_EVIDENCE",
+        "ESCALATE": "ESCALATED",
+        "REOPEN": "REOPENED",
+    }
+    row.status = statuses[payload.action]
+    row.reviewer = principal.subject
+    row.decision_reason = payload.reason
+    row.updated_at = datetime.now(UTC)
+    case = await get_case(session, principal, row.case_id)
+    if payload.action == "APPROVE_LEGITIMATE":
+        case.disposition = "FALSE_POSITIVE"
+        case.status = "RESOLVED"
+    elif payload.action == "CONFIRM_SUSPICIOUS":
+        case.disposition = "CONFIRMED_FRAUD"
+        case.status = "RESOLVED"
+    elif payload.action == "ESCALATE":
+        case.status = "ESCALATED"
+    elif payload.action == "REOPEN":
+        case.status = "UNDER_REVIEW"
+        case.disposition = None
+    await _audit(
+        session,
+        principal,
+        "review.decided",
+        row.id,
+        {"case_id": row.case_id, "action": payload.action},
+    )
+    await session.commit()
+    return _review(row)
 
 
 async def dashboard(session: AsyncSession, principal: Principal) -> DashboardMetrics:

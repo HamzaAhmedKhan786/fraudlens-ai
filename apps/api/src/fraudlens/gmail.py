@@ -83,12 +83,20 @@ class GmailConnector:
     async def callback(self, session: AsyncSession, state: str, code: str) -> str:
         self._require_configured()
         now = datetime.now(UTC)
-        state_record = await session.get(
-            GmailOAuthStateRecord, sha256(state.encode()).hexdigest(), with_for_update=True
+        consumed = await session.execute(
+            delete(GmailOAuthStateRecord)
+            .where(
+                GmailOAuthStateRecord.state_hash == sha256(state.encode()).hexdigest(),
+                GmailOAuthStateRecord.expires_at > now,
+            )
+            .returning(GmailOAuthStateRecord)
         )
-        if not state_record or state_record.used_at or state_record.expires_at < now:
+        state_record = consumed.scalar_one_or_none()
+        if not state_record:
+            await session.rollback()
             raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
-        state_record.used_at = now
+        # Deleting and returning the row is a single database statement. Only one
+        # worker can consume a state, and the commit makes replay rejection durable.
         await session.commit()
         token = await self._request_json(
             "POST",
@@ -178,6 +186,9 @@ class GmailConnector:
     async def sync(
         self, session: AsyncSession, principal: Principal, request: GmailSyncRequest
     ) -> GmailSyncResult:
+        # Validate once before calling Gmail so a mistyped case does not turn every
+        # matching message into an identical ingestion failure.
+        await self.ingestion.list(session, principal, request.case_id)
         connection = await self._connection(session, principal)
         access_token = await self._refresh_access_token(session, connection)
         query: list[str] = []
@@ -189,14 +200,15 @@ class GmailConnector:
             query.append(f"before:{request.before}")
         if request.has_attachment is not None:
             query.append("has:attachment" if request.has_attachment else "-has:attachment")
+        headers = {"Authorization": f"Bearer {access_token}"}
+        label_ids = await self._resolve_label_ids(request.label_ids, headers)
         params: list[tuple[str, str | int]] = [
             ("maxResults", request.max_messages),
             ("q", " ".join(query)),
         ]
-        params.extend(("labelIds", label) for label in request.label_ids)
+        params.extend(("labelIds", label) for label in label_ids)
         if request.page_token:
             params.append(("pageToken", request.page_token))
-        headers = {"Authorization": f"Bearer {access_token}"}
         listing = await self._request_json(
             "GET", f"{GMAIL_API}/messages", headers=headers, params=params
         )
@@ -264,6 +276,28 @@ class GmailConnector:
             next_page_token=listing.get("nextPageToken"),
         )
 
+    async def _resolve_label_ids(self, requested: list[str], headers: dict[str, str]) -> list[str]:
+        if not requested:
+            return []
+        response = await self._request_json("GET", f"{GMAIL_API}/labels", headers=headers)
+        lookup: dict[str, str] = {}
+        for label in response.get("labels", []):
+            label_id = str(label.get("id", "")).strip()
+            name = str(label.get("name", "")).strip()
+            if label_id:
+                lookup[label_id.casefold()] = label_id
+            if name and label_id:
+                lookup[name.casefold()] = label_id
+        resolved: list[str] = []
+        for value in requested:
+            normalized = value.strip().casefold()
+            if normalized not in lookup:
+                raise HTTPException(status_code=422, detail=f"Unknown Gmail label: {value}")
+            label_id = lookup[normalized]
+            if label_id not in resolved:
+                resolved.append(label_id)
+        return resolved
+
     async def _refresh_access_token(
         self, session: AsyncSession, connection: GmailConnectionRecord
     ) -> str:
@@ -316,8 +350,34 @@ class GmailConnector:
                 await asyncio.sleep(retry_after * (attempt + 1))
         if not last_response or last_response.is_error:
             detail = "Gmail provider request failed"
-            if last_response and last_response.status_code in {400, 401, 403}:
-                detail = "Google authorization expired or was revoked"
+            if last_response:
+                provider_error = ""
+                try:
+                    payload = last_response.json()
+                    provider_error = str(payload.get("error", ""))
+                    if isinstance(payload.get("error"), dict):
+                        provider_error = str(payload["error"].get("status", ""))
+                except (ValueError, TypeError):
+                    pass
+                if url == TOKEN_URL:
+                    if provider_error == "invalid_client" or last_response.status_code == 401:
+                        detail = "Google rejected the OAuth client credentials"
+                    elif provider_error == "redirect_uri_mismatch":
+                        detail = "Google rejected the configured OAuth redirect URI"
+                    elif provider_error == "invalid_grant":
+                        detail = "Google rejected the one-time authorization code"
+                    elif last_response.status_code in {400, 403}:
+                        detail = "Google rejected the OAuth token exchange"
+                elif url.startswith(GMAIL_API):
+                    if last_response.status_code == 400:
+                        detail = "Gmail rejected the filters; verify labels and search criteria"
+                    if last_response.status_code == 403:
+                        detail = (
+                            "Gmail API access was denied; enable the Gmail API and verify "
+                            "OAuth test-user access"
+                        )
+                    elif last_response.status_code == 401:
+                        detail = "Google rejected the Gmail access token"
             raise HTTPException(status_code=502, detail=detail)
         if allow_empty and not last_response.content:
             return {}

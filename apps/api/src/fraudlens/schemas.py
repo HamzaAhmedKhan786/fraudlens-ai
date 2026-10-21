@@ -10,6 +10,8 @@ class CaseCreate(BaseModel):
     tenant_id: str = Field(default="demo", min_length=2, max_length=100)
     subject: str = Field(min_length=3, max_length=240)
     case_type: str = Field(min_length=2, max_length=80)
+    analysis_modules: list[str] = Field(default_factory=list, max_length=20)
+    evidence_sources: list[str] = Field(default_factory=list, max_length=10)
 
 
 class CaseSummary(BaseModel):
@@ -17,6 +19,8 @@ class CaseSummary(BaseModel):
     tenant_id: str
     subject: str
     case_type: str
+    analysis_modules: list[str]
+    evidence_sources: list[str]
     status: str
     risk_score: int
     severity: str
@@ -43,6 +47,31 @@ class CaseUpdate(BaseModel):
 
 class CaseCommentCreate(BaseModel):
     body: str = Field(min_length=1, max_length=4000)
+
+
+class ReviewRequestCreate(BaseModel):
+    request_type: str = Field(pattern="^(VERIFICATION|FALSE_POSITIVE|REOPEN|ADDITIONAL_REVIEW)$")
+    reason: str = Field(min_length=10, max_length=4000)
+
+
+class ReviewDecision(BaseModel):
+    action: str = Field(
+        pattern="^(APPROVE_LEGITIMATE|CONFIRM_SUSPICIOUS|REJECT|REQUEST_EVIDENCE|ESCALATE|REOPEN)$"
+    )
+    reason: str = Field(min_length=10, max_length=4000)
+
+
+class ReviewRequest(BaseModel):
+    id: str
+    case_id: str
+    requester: str
+    request_type: str
+    reason: str
+    status: str
+    reviewer: str | None
+    decision_reason: str | None
+    created_at: datetime
+    updated_at: datetime
 
 
 class CaseComment(BaseModel):
@@ -72,6 +101,149 @@ class DetectionSignal(BaseModel):
 
 class EvidenceCreate(Evidence):
     pass
+
+
+class DeleteRequest(BaseModel):
+    reason: str = Field(min_length=10, max_length=2000)
+
+
+class BulkEvidenceDelete(DeleteRequest):
+    evidence_ids: list[str] = Field(min_length=1, max_length=100)
+
+
+class DeletionResult(BaseModel):
+    deleted_ids: list[str]
+    recovery_until: datetime
+
+
+class OrganizationCreate(BaseModel):
+    id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{2,99}$")
+    name: str = Field(min_length=2, max_length=240)
+    account_type: str = Field(pattern="^(INDIVIDUAL|ORGANIZATION)$")
+    owner_email: str = Field(min_length=3, max_length=320)
+
+
+class Organization(BaseModel):
+    id: str
+    name: str
+    account_type: str
+    status: str
+
+
+class WorkspaceSummary(BaseModel):
+    id: str
+    name: str
+    account_type: str
+    role: str
+    status: str
+
+
+class Member(BaseModel):
+    id: str
+    subject: str
+    email: str
+    role: str
+    status: str
+
+
+class InvitationCreate(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    role: str = Field(pattern="^(admin|analyst|viewer|reviewer|executive)$")
+
+
+class Invitation(BaseModel):
+    id: str
+    email: str
+    role: str
+    status: str
+    expires_at: datetime
+    acceptance_token: str | None = None
+
+
+class InvitationAccept(BaseModel):
+    token: str = Field(min_length=32, max_length=256)
+    email: str = Field(min_length=3, max_length=320)
+
+
+class EntitlementStatus(BaseModel):
+    plan_code: str
+    subscription_status: str
+    limits: dict[str, int]
+    usage: dict[str, int]
+    remaining: dict[str, int]
+
+
+class SubscriptionSelection(BaseModel):
+    plan_code: str = Field(pattern="^(individual|small|medium|enterprise)$")
+    billing_interval: str = Field(pattern="^(monthly|annual)$")
+
+
+class BillingAction(BaseModel):
+    url: str | None
+    configured: bool
+    detail: str
+
+
+class ProviderCapability(BaseModel):
+    provider: str
+    status: str
+    modes: list[str]
+    detail: str
+
+
+class AddinIngestRequest(BaseModel):
+    provider: str = Field(pattern="^(gmail|microsoft)$")
+    case_id: str = Field(min_length=3, max_length=100)
+    internet_message_id: str = Field(min_length=3, max_length=998)
+    consent_confirmed: bool
+
+
+class SimilarityMatch(BaseModel):
+    case_id: str
+    subject: str
+    similarity: float
+    rationale: list[str]
+
+
+class ChatPrompt(BaseModel):
+    content: str = Field(min_length=2, max_length=4000)
+
+
+class ChatMessage(BaseModel):
+    id: str
+    role: str
+    content: str
+    citations: list[str]
+    model: str
+    created_at: datetime
+
+
+class ChatFeedbackCreate(BaseModel):
+    rating: str = Field(pattern="^(CORRECT|INCORRECT|FALSE_POSITIVE|MISSING_EVIDENCE|OTHER)$")
+    explanation: str | None = Field(default=None, max_length=4000)
+
+
+class ChatFeedback(BaseModel):
+    id: str
+    message_id: str
+    rating: str
+    explanation: str | None
+    reviewed: bool
+    created_at: datetime
+
+
+class EvaluationPromotion(BaseModel):
+    expected_assessment: str = Field(min_length=10, max_length=4000)
+
+
+class EvaluationExample(BaseModel):
+    id: str
+    case_id: str
+    message_id: str
+    feedback_id: str
+    expected_assessment: str
+    approved_by: str
+    created_at: datetime
 
 
 class AuditEntry(BaseModel):

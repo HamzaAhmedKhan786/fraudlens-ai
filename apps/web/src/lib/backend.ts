@@ -1,9 +1,13 @@
 import "server-only";
+import { cookies } from "next/headers";
 
 export const backendBaseUrl = process.env.FRAUDLENS_API_URL ?? "http://127.0.0.1:8000/api/v1";
 const apiKey = process.env.FRAUDLENS_API_KEY ?? "fraudlens-local-dev-key";
 
-export function backendAuthHeaders(): Record<string, string> {
+export async function backendAuthHeaders(): Promise<Record<string, string>> {
+  const token=(await cookies()).get("fraudlens_session")?.value;
+  const workspace=(await cookies()).get("fraudlens_workspace")?.value;
+  if(token)return {Authorization:`Bearer ${token}`,...(workspace?{"X-Workspace-ID":workspace}:{})};
   return { "X-API-Key": apiKey, "X-Tenant-ID": "demo", "X-Actor": "web-console", "X-Roles": "analyst,reviewer,admin" };
 }
 
@@ -12,6 +16,8 @@ export type CaseSummary = {
   tenant_id: string;
   subject: string;
   case_type: string;
+  analysis_modules: string[];
+  evidence_sources: string[];
   status: string;
   risk_score: number;
   severity: string;
@@ -47,6 +53,12 @@ export type UploadList = { items: UploadSummary[]; total: number };
 export type PublicIntelligence = { id: string; indicator_type: string; indicator: string; provider: string; source_uri: string; status: string; facts: Record<string, unknown>; fetched_at: string };
 export type GmailConnection = { connected: boolean; email_address: string | null; status: string; scopes: string[]; connected_at: string | null; last_sync_at: string | null; last_error: string | null };
 export type GmailSyncResult = { imported_messages: number; imported_attachments: number; duplicate_messages: number; failed_messages: { message_id: string; error: string }[]; next_page_token: string | null };
+export type ReviewRequest = { id:string; case_id:string; requester:string; request_type:string; reason:string; status:string; reviewer:string|null; decision_reason:string|null; created_at:string; updated_at:string };
+export type Member = { id:string; subject:string; email:string; role:string; status:string };
+export type EntitlementStatus = { plan_code:string; subscription_status:string; limits:Record<string,number>; usage:Record<string,number>; remaining:Record<string,number> };
+export type ProviderCapability = { provider:string; status:string; modes:string[]; detail:string };
+export type WorkspaceSummary = { id:string; name:string; account_type:string; role:string; status:string };
+export type ChatMessage = { id:string; role:string; content:string; citations:string[]; model:string; created_at:string };
 
 export async function backendFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${backendBaseUrl}${path}`, {
@@ -54,7 +66,7 @@ export async function backendFetch<T>(path: string, init: RequestInit = {}): Pro
     cache: "no-store",
     headers: {
       "Content-Type": "application/json",
-      ...backendAuthHeaders(),
+      ...await backendAuthHeaders(),
       ...init.headers,
     },
   });

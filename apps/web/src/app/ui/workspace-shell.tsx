@@ -6,19 +6,21 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { WorkspaceSwitcher } from "./workspace-switcher";
 
 const sections = [
   { group: "OPERATIONS", items: [
     ["/", "Overview", LayoutDashboard], ["/cases", "Cases", FileWarning],
     ["/uploads", "Evidence intake", UploadCloud],
     ["/investigations", "Investigations", Workflow], ["/graph", "Entity graph", GitBranch],
+    ["/reviews", "Review queue", ShieldCheck],
   ] },
   { group: "INTELLIGENCE", items: [
     ["/intelligence", "Public intelligence", Globe2], ["/connectors", "Email connectors", Mail], ["/agents", "Agent activity", Sparkles], ["/policies", "Detection policies", ShieldCheck],
     ["/models", "Model health", Activity],
   ] },
   { group: "ADMIN", items: [
-    ["/team", "Team & access", Users], ["/settings", "Settings", Settings],
+    ["/workspaces", "Workspaces", Users], ["/team", "Team & access", Users], ["/billing", "Plan & usage", FileWarning], ["/trash", "Deleted investigations", FileWarning], ["/settings", "Settings", Settings],
     ["/audit", "Audit trail", FileWarning],
   ] },
 ] as const;
@@ -28,7 +30,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
   return <main className="app-shell">
     <aside className="sidebar">
       <Link href="/" className="brand"><img src="/brand/app-icon.png" alt="" /><div><strong>FraudLens</strong><span>AI</span></div></Link>
-      <div className="workspace"><span>Workspace</span><button>Acme Financial <ChevronDown size={14} /></button></div>
+      <WorkspaceSwitcher />
       <nav>{sections.map(section => <div key={section.group}><p>{section.group}</p>{section.items.map(([href,label,Icon]) => <Link key={href} href={href} className={`nav-item ${pathname === href || (href !== "/" && pathname.startsWith(href)) ? "active" : ""}`}><Icon size={18}/><span>{label}</span></Link>)}</div>)}</nav>
       <div className="system-state"><i /><div><strong>All systems operational</strong><span>Core agents online</span></div></div>
     </aside>

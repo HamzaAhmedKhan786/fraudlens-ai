@@ -1,0 +1,1 @@
+import{backendFetch}from"@/lib/backend";export async function POST(_:Request,{params}:{params:Promise<{id:string}>}){const{id}=await params;try{return Response.json(await backendFetch(`/cases/${encodeURIComponent(id)}/investigate`,{method:"POST"}))}catch(error){return Response.json({detail:error instanceof Error?error.message:"Investigation failed"},{status:502})}}

@@ -1,0 +1,1 @@
+import{backendFetch}from"@/lib/backend";export async function POST(){try{return Response.json(await backendFetch("/billing/portal",{method:"POST"}))}catch(error){return Response.json({detail:error instanceof Error?error.message:"Portal unavailable"},{status:502})}}

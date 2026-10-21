@@ -81,6 +81,7 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:8000/api/v1/connectors/google/callback}
       GOOGLE_GMAIL_SCOPES: ${GOOGLE_GMAIL_SCOPES:-https://www.googleapis.com/auth/gmail.readonly}
+      OAUTH_STATE_TTL_SECONDS: ${OAUTH_STATE_TTL_SECONDS:-600}
       GOOGLE_TOKEN_ENCRYPTION_KEY: ${GOOGLE_TOKEN_ENCRYPTION_KEY:-}
       OCR_ENABLED: ${OCR_ENABLED:-true}
       OCR_LANGUAGES: ${OCR_LANGUAGES:-eng+deu+spa+ita+urd+fra+ara}

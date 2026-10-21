@@ -1,46 +1,86 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from html import escape
 from pathlib import Path
 from shutil import which
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fraudlens.auth import Principal, require_principal
+from fraudlens.billing import checkout, portal, verify_signature
 from fraudlens.config import get_settings as get_runtime_settings
-from fraudlens.database import get_session
+from fraudlens.copilot import ask as ask_copilot
+from fraudlens.copilot import convert_to_note, list_chat, promote_evaluation
+from fraudlens.copilot import feedback as save_copilot_feedback
+from fraudlens.database import SubscriptionRecord, get_session
 from fraudlens.dependencies import get_gmail_connector, get_ingestion_service, get_orchestrator
 from fraudlens.domain.models import InvestigationReport, InvestigationRequest
 from fraudlens.gmail import GmailConnector
 from fraudlens.ingestion import IngestionService
 from fraudlens.orchestrator import InvestigationOrchestrator
+from fraudlens.platform_services import (
+    accept_invitation,
+    connector_capabilities,
+    create_invitation,
+    create_organization,
+    entitlement_status,
+    historical_similarity,
+    list_members,
+    list_workspaces,
+)
 from fraudlens.public_intelligence import list_public_intelligence, lookup_domain
 from fraudlens.schemas import (
+    AddinIngestRequest,
     AgentStatus,
     AuditEntry,
+    BillingAction,
+    BulkEvidenceDelete,
     CaseComment,
     CaseCommentCreate,
     CaseCreate,
     CaseDetail,
     CaseSummary,
     CaseUpdate,
+    ChatFeedback,
+    ChatFeedbackCreate,
+    ChatMessage,
+    ChatPrompt,
     DashboardMetrics,
+    DeleteRequest,
+    DeletionResult,
     DomainLookup,
+    EntitlementStatus,
     EntityGraph,
+    EvaluationExample,
+    EvaluationPromotion,
     EvidenceCreate,
     GmailAuthorization,
     GmailConnection,
     GmailSyncRequest,
     GmailSyncResult,
     InvestigationSummary,
+    Invitation,
+    InvitationAccept,
+    InvitationCreate,
+    Member,
     ModelHealth,
+    Organization,
+    OrganizationCreate,
     PolicyDefinition,
     PolicyUpdate,
+    ProviderCapability,
     PublicIntelligence,
+    ReviewDecision,
+    ReviewRequest,
+    ReviewRequestCreate,
+    SimilarityMatch,
+    SubscriptionSelection,
     UploadList,
     UploadSummary,
     WorkspaceSettings,
+    WorkspaceSummary,
 )
 from fraudlens.services import (
     add_case_comment,
@@ -48,19 +88,289 @@ from fraudlens.services import (
     audit_log,
     create_case,
     dashboard,
+    decide_review,
     entity_graph,
     get_case_detail,
     get_workspace_settings,
     investigate_case,
     list_cases,
+    list_deleted_cases,
     list_investigations,
     list_policies,
+    list_reviews,
+    request_review,
+    restore_case,
+    soft_delete_case,
+    soft_delete_evidence,
     update_case,
     update_policy,
     update_workspace_settings,
 )
 
 router = APIRouter()
+
+
+@router.get("/workspaces", response_model=list[WorkspaceSummary])
+async def get_workspaces(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+):
+    return await list_workspaces(session, principal)
+
+
+@router.post("/billing/checkout", response_model=BillingAction)
+async def post_checkout(
+    payload: SubscriptionSelection,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+):
+    return await checkout(session, principal, payload)
+
+
+@router.post("/subscriptions/select", response_model=EntitlementStatus)
+async def select_plan(
+    payload: SubscriptionSelection,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+):
+    if "admin" not in principal.roles:
+        raise HTTPException(403, "Administrator role required")
+    row = await session.get(SubscriptionRecord, principal.tenant_id)
+    if not row:
+        row = SubscriptionRecord(tenant_id=principal.tenant_id)
+        session.add(row)
+    row.plan_code = payload.plan_code
+    if row.status not in {"ACTIVE", "PAST_DUE", "SUSPENDED"}:
+        row.status = "TRIAL"
+        row.current_period_end = datetime.now(UTC) + timedelta(
+            days=get_runtime_settings().subscription_trial_days
+        )
+    await session.commit()
+    return await entitlement_status(session, principal)
+
+
+@router.post("/billing/portal", response_model=BillingAction)
+async def post_portal(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+):
+    return await portal(session, principal)
+
+
+@router.post("/billing/webhook", include_in_schema=False)
+async def stripe_webhook(request: Request, session: Annotated[AsyncSession, Depends(get_session)]):
+    settings = get_runtime_settings()
+    if not settings.stripe_enabled:
+        raise HTTPException(503, "Stripe test mode is not configured")
+    event = verify_signature(
+        await request.body(),
+        request.headers.get("stripe-signature", ""),
+        settings.stripe_webhook_secret,
+    )
+    obj = event.get("data", {}).get("object", {})
+    metadata = obj.get("metadata", {})
+    tenant = metadata.get("tenant_id")
+    if tenant:
+        row = await session.get(SubscriptionRecord, tenant)
+        if row:
+            event_type = event.get("type", "")
+            row.status = {
+                "customer.subscription.trial_will_end": "TRIAL",
+                "customer.subscription.updated": "ACTIVE",
+                "customer.subscription.deleted": "CANCELED",
+                "invoice.payment_failed": "PAST_DUE",
+            }.get(event_type, row.status)
+            row.provider_customer_id = obj.get("customer") or row.provider_customer_id
+            row.provider_subscription_id = (
+                obj.get("subscription") or obj.get("id") or row.provider_subscription_id
+            )
+            await session.commit()
+    return {"received": True}
+
+
+@router.get("/cases/{case_id}/chat", response_model=list[ChatMessage])
+async def get_case_chat(
+    case_id: str,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+) -> list[ChatMessage]:
+    return await list_chat(session, principal, case_id)
+
+
+@router.post("/cases/{case_id}/chat", response_model=ChatMessage, status_code=201)
+async def post_case_chat(
+    case_id: str,
+    payload: ChatPrompt,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+) -> ChatMessage:
+    return await ask_copilot(session, principal, case_id, payload)
+
+
+@router.post("/cases/{case_id}/chat/stream")
+async def stream_case_chat(
+    case_id: str,
+    payload: ChatPrompt,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+):
+    message = await ask_copilot(session, principal, case_id, payload)
+
+    async def events():
+        import json
+
+        for word in message.content.split(" "):
+            yield f"data: {json.dumps({'delta': word + ' '})}\n\n"
+        yield f"data: {json.dumps({'done': True, 'message': message.model_dump(mode='json')})}\n\n"
+
+    return StreamingResponse(
+        events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"}
+    )
+
+
+@router.post("/cases/{case_id}/chat/{message_id}/note", response_model=CaseComment, status_code=201)
+async def post_chat_note(
+    case_id: str,
+    message_id: str,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+):
+    return await convert_to_note(session, principal, case_id, message_id)
+
+
+@router.post(
+    "/cases/{case_id}/chat/{message_id}/feedback",
+    response_model=ChatFeedback,
+    status_code=201,
+)
+async def post_chat_feedback(
+    case_id: str,
+    message_id: str,
+    payload: ChatFeedbackCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+) -> ChatFeedback:
+    return await save_copilot_feedback(session, principal, case_id, message_id, payload)
+
+
+@router.post(
+    "/copilot/feedback/{feedback_id}/promote", response_model=EvaluationExample, status_code=201
+)
+async def post_feedback_promotion(
+    feedback_id: str,
+    payload: EvaluationPromotion,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+):
+    return await promote_evaluation(session, principal, feedback_id, payload)
+
+
+@router.post("/organizations", response_model=Organization, status_code=201)
+async def post_organization(
+    payload: OrganizationCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+) -> Organization:
+    return await create_organization(session, principal, payload)
+
+
+@router.get("/members", response_model=list[Member])
+async def get_members(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+) -> list[Member]:
+    return await list_members(session, principal)
+
+
+@router.post("/invitations", response_model=Invitation, status_code=201)
+async def post_invitation(
+    payload: InvitationCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+) -> Invitation:
+    return await create_invitation(session, principal, payload)
+
+
+@router.post("/invitations/accept", response_model=Member)
+async def post_accept_invitation(
+    payload: InvitationAccept,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+) -> Member:
+    return await accept_invitation(session, principal, payload)
+
+
+@router.get("/entitlements", response_model=EntitlementStatus)
+async def get_entitlements(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+) -> EntitlementStatus:
+    return await entitlement_status(session, principal)
+
+
+@router.get("/connectors/email/capabilities", response_model=list[ProviderCapability])
+async def get_connector_capabilities(
+    _: Annotated[Principal, Depends(require_principal)],
+) -> list[ProviderCapability]:
+    return connector_capabilities()
+
+
+@router.post("/connectors/email/addin/messages", status_code=501)
+async def post_addin_message(
+    payload: AddinIngestRequest, _: Annotated[Principal, Depends(require_principal)]
+):
+    if not payload.consent_confirmed:
+        raise HTTPException(400, "Explicit user consent is required")
+    raise HTTPException(
+        501, f"{payload.provider} selected-message retrieval requires provider add-in credentials"
+    )
+
+
+@router.get("/cases/{case_id}/similarity", response_model=list[SimilarityMatch])
+async def get_similarity(
+    case_id: str,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+) -> list[SimilarityMatch]:
+    return await historical_similarity(session, principal, case_id)
+
+
+@router.get("/cases/{case_id}/report", response_class=HTMLResponse)
+async def export_case_report(
+    case_id: str,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+) -> HTMLResponse:
+    case = await get_case_detail(session, principal, case_id)
+    findings = case.latest_report.findings if case.latest_report else []
+    rows = "".join(
+        "<li><strong>"
+        f"{escape(item.title)}</strong> — {escape(item.explanation)} "
+        f"({item.confidence:.0%})</li>"
+        for item in findings
+    )
+    summary = escape(
+        case.latest_report.summary
+        if case.latest_report
+        else "No investigation report has been generated."
+    )
+    html = f"""<!doctype html><html><head><meta charset='utf-8'>
+<title>{escape(case.id)} report</title><style>
+body{{font:16px system-ui;max-width:900px;margin:40px auto;color:#17233c}}
+header{{border-bottom:3px solid #00bde8}}small{{color:#64748b}}
+.score{{font-size:42px;font-weight:800}}</style></head><body>
+<header><h1>FraudLens investigation report</h1>
+<small>Evidence-grounded report; not a guarantee of authenticity.</small></header>
+<h2>{escape(case.subject)}</h2>
+<p>Case {escape(case.id)} · {escape(case.case_type)} · {escape(case.status)}</p>
+<p class='score'>{case.risk_score}/100 · {escape(case.severity)}</p>
+<h3>Summary</h3><p>{summary}</p><h3>Findings</h3>
+<ul>{rows or "<li>No findings available.</li>"}</ul><h3>Evidence</h3>
+<p>{len(case.evidence)} active evidence item(s). Audit records remain available.</p>
+</body></html>"""
+    return HTMLResponse(
+        html, headers={"Content-Disposition": f'attachment; filename="{case.id}-report.html"'}
+    )
 
 
 @router.post("/connectors/google/authorize", response_model=GmailAuthorization)
@@ -160,6 +470,14 @@ async def get_cases(
     return await list_cases(session, principal)
 
 
+@router.get("/cases-deleted", response_model=list[CaseSummary])
+async def get_deleted_cases(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+) -> list[CaseSummary]:
+    return await list_deleted_cases(session, principal)
+
+
 @router.post("/cases", response_model=CaseSummary, status_code=201)
 async def post_case(
     payload: CaseCreate,
@@ -188,6 +506,25 @@ async def patch_case(
     return await update_case(session, principal, case_id, payload)
 
 
+@router.delete("/cases/{case_id}", response_model=DeletionResult)
+async def delete_case(
+    case_id: str,
+    payload: DeleteRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+) -> DeletionResult:
+    return await soft_delete_case(session, principal, case_id, payload)
+
+
+@router.post("/cases/{case_id}/restore", response_model=CaseDetail)
+async def post_restore_case(
+    case_id: str,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+) -> CaseDetail:
+    return await restore_case(session, principal, case_id)
+
+
 @router.post("/cases/{case_id}/comments", response_model=CaseComment, status_code=201)
 async def post_case_comment(
     case_id: str,
@@ -198,6 +535,34 @@ async def post_case_comment(
     return await add_case_comment(session, principal, case_id, payload)
 
 
+@router.post("/cases/{case_id}/reviews", response_model=ReviewRequest, status_code=201)
+async def post_review_request(
+    case_id: str,
+    payload: ReviewRequestCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+) -> ReviewRequest:
+    return await request_review(session, principal, case_id, payload)
+
+
+@router.get("/reviews", response_model=list[ReviewRequest])
+async def get_reviews(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+) -> list[ReviewRequest]:
+    return await list_reviews(session, principal)
+
+
+@router.patch("/reviews/{review_id}", response_model=ReviewRequest)
+async def patch_review(
+    review_id: str,
+    payload: ReviewDecision,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+) -> ReviewRequest:
+    return await decide_review(session, principal, review_id, payload)
+
+
 @router.post("/cases/{case_id}/evidence", status_code=201)
 async def post_evidence(
     case_id: str,
@@ -206,6 +571,29 @@ async def post_evidence(
     principal: Annotated[Principal, Depends(require_principal)],
 ):
     return await add_evidence(session, principal, case_id, payload)
+
+
+@router.delete("/cases/{case_id}/evidence/{evidence_id}", response_model=DeletionResult)
+async def delete_evidence(
+    case_id: str,
+    evidence_id: str,
+    payload: DeleteRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+) -> DeletionResult:
+    return await soft_delete_evidence(session, principal, case_id, [evidence_id], payload.reason)
+
+
+@router.post("/cases/{case_id}/evidence/bulk-delete", response_model=DeletionResult)
+async def bulk_delete_evidence(
+    case_id: str,
+    payload: BulkEvidenceDelete,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+) -> DeletionResult:
+    return await soft_delete_evidence(
+        session, principal, case_id, payload.evidence_ids, payload.reason
+    )
 
 
 @router.post("/cases/{case_id}/investigate", response_model=InvestigationReport)
@@ -244,6 +632,7 @@ async def get_entity_graph(
 
 @router.get("/agents", response_model=list[AgentStatus])
 async def get_agents(_: Annotated[Principal, Depends(require_principal)]) -> list[AgentStatus]:
+    provider = get_runtime_settings().llm_provider
     return [
         AgentStatus(
             id="email-security",
@@ -277,7 +666,7 @@ async def get_agents(_: Annotated[Principal, Depends(require_principal)]) -> lis
             name="AI Investigator",
             category="Investigation",
             mode="LLM-assisted",
-            status="STANDBY",
+            status="ONLINE" if provider in {"openai", "groq", "ollama"} else "STANDBY",
             supported_kinds=["finding"],
             description="Evidence-grounded narrative generation; cannot alter risk.",
         ),
@@ -341,7 +730,7 @@ async def get_model_health(
         ModelHealth(
             id="llm-narrative",
             name="Investigation Narrative",
-            provider={"openai": "OpenAI", "groq": "Groq"}.get(
+            provider={"openai": "OpenAI", "groq": "Groq", "ollama": "Local Ollama"}.get(
                 settings.llm_provider, "Not configured"
             ),
             status="STANDBY",
@@ -349,8 +738,8 @@ async def get_model_health(
             last_checked=now,
             detail=(
                 f"Evidence-grounded narratives configured with {settings.llm_provider}."
-                if settings.llm_provider in {"openai", "groq"}
-                else "Enable OpenAI or Groq with provider credentials for cited narratives."
+                if settings.llm_provider in {"openai", "groq", "ollama"}
+                else "Enable OpenAI, Groq, or Ollama for cited narratives."
             ),
         ),
         ModelHealth(

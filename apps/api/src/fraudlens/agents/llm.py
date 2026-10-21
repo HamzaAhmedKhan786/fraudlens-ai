@@ -46,3 +46,34 @@ class OpenAICompatibleNarrativeGenerator:
             input=json.dumps(payload),
         )
         return response.output_text
+
+
+class OllamaNarrativeGenerator:
+    """Local OpenAI-compatible chat adapter; deterministic findings remain authoritative."""
+
+    def __init__(self, api_key: str, model: str, base_url: str) -> None:
+        from openai import AsyncOpenAI
+
+        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self._model = model
+
+    async def summarize(self, findings: list[Finding], risk: RiskAssessment) -> str:
+        payload = {
+            "risk": risk.model_dump(mode="json"),
+            "findings": [x.model_dump(mode="json") for x in findings],
+        }
+        response = await self._client.chat.completions.create(
+            model=self._model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Summarize only supplied fraud findings. Never alter risk or claim "
+                        "fraud is proven. Cite evidence IDs."
+                    ),
+                },
+                {"role": "user", "content": json.dumps(payload)},
+            ],
+            temperature=0,
+        )
+        return response.choices[0].message.content or "Local model returned no narrative."

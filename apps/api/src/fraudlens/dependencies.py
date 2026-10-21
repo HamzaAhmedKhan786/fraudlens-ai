@@ -7,6 +7,7 @@ from fraudlens.agents.deterministic import (
 )
 from fraudlens.agents.llm import (
     DeterministicNarrativeGenerator,
+    OllamaNarrativeGenerator,
     OpenAICompatibleNarrativeGenerator,
 )
 from fraudlens.agents.risk import RiskEngine
@@ -42,12 +43,17 @@ def get_orchestrator() -> InvestigationOrchestrator:
             settings.groq_model,
             base_url=settings.groq_base_url,
         )
+    elif settings.llm_provider == "ollama":
+        narrative = OllamaNarrativeGenerator(
+            settings.ollama_api_key, settings.ollama_model, settings.ollama_base_url
+        )
     return InvestigationOrchestrator(
         agents=[EmailSecurityAgent(), DocumentIntegrityAgent(), UrlReputationAgent()],
         risk_engine=RiskEngine(),
         narrative=narrative,
         publisher=get_publisher(),
         max_steps=settings.max_agent_steps,
+        agent_timeout_seconds=settings.agent_timeout_seconds,
     )
 
 

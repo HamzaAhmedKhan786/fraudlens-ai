@@ -1,7 +1,15 @@
 import { backendFetch, type CaseSummary } from "@/lib/backend";
 
-export async function POST() {
-  const suffix = Date.now().toString().slice(-8);
+type NewCaseRequest = { subject?: string; case_type?: string; analysis_modules?: string[]; evidence_sources?: string[] };
+
+export async function POST(request: Request) {
+  const payload = (await request.json().catch(() => ({}))) as NewCaseRequest;
+  const subject = payload.subject?.trim() ?? "";
+  const caseType = payload.case_type?.trim() ?? "";
+  if (subject.length < 3 || subject.length > 240 || caseType.length < 2 || caseType.length > 80) {
+    return Response.json({ detail: "Enter a valid case title and investigation type." }, { status: 422 });
+  }
+  const suffix = `${Date.now().toString(36)}${crypto.randomUUID().slice(0, 4)}`.toUpperCase();
   const caseId = `FR-${suffix}`;
   try {
     const created = await backendFetch<CaseSummary>("/cases", {
@@ -9,38 +17,16 @@ export async function POST() {
       body: JSON.stringify({
         id: caseId,
         tenant_id: "demo",
-        subject: "New supplier payment request",
-        case_type: "Invoice + email",
+        subject,
+        case_type: caseType,
+        analysis_modules: payload.analysis_modules ?? [],
+        evidence_sources: payload.evidence_sources ?? [],
       }),
     });
-    await backendFetch(`/cases/${caseId}/evidence`, {
-      method: "POST",
-      body: JSON.stringify({
-        id: `${caseId}-email`,
-        kind: "email",
-        source: "supplier-payment.eml",
-        attributes: {
-          reply_to_mismatch: true,
-          spf_pass: false,
-          dkim_pass: true,
-          dmarc_pass: false,
-        },
-      }),
-    });
-    await backendFetch(`/cases/${caseId}/evidence`, {
-      method: "POST",
-      body: JSON.stringify({
-        id: `${caseId}-invoice`,
-        kind: "invoice",
-        source: "supplier-invoice.pdf",
-        attributes: { iban_changed: true, metadata_modified: true },
-      }),
-    });
-    const report = await backendFetch(`/cases/${caseId}/investigate`, { method: "POST" });
-    return Response.json({ case: created, report }, { status: 201 });
+    return Response.json({ case: created }, { status: 201 });
   } catch (error) {
     return Response.json(
-      { detail: error instanceof Error ? error.message : "Investigation failed" },
+      { detail: error instanceof Error ? error.message : "Case creation failed" },
       { status: 502 },
     );
   }

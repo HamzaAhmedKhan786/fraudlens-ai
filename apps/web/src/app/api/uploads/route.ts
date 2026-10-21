@@ -31,7 +31,7 @@ export async function POST(request: Request) {
   try {
     const response = await fetch(
       `${backendBaseUrl}/cases/${encodeURIComponent(caseId)}/uploads`,
-      { method: "POST", headers: backendAuthHeaders(), body: outgoing },
+      { method: "POST", headers: await backendAuthHeaders(), body: outgoing },
     );
     return new Response(await response.arrayBuffer(), {
       status: response.status,
