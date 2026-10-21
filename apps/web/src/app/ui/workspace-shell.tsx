@@ -7,6 +7,7 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { WorkspaceSwitcher } from "./workspace-switcher";
+import { GuidanceCopilot } from "./guidance-copilot";
 
 const sections = [
   { group: "OPERATIONS", items: [
@@ -38,6 +39,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
       <header className="topbar"><div className="search"><Search size={17}/><span>Search cases, entities, evidence...</span><kbd>⌘ K</kbd></div><button className="icon-button" aria-label="Notifications"><Bell size={18}/><i /></button><button className="profile"><span>HK</span><div><strong>Hamza Khan</strong><small>Administrator</small></div><ChevronDown size={14}/></button></header>
       {children}
     </section>
+    <GuidanceCopilot />
   </main>;
 }
 

@@ -22,9 +22,65 @@ from fraudlens.schemas import (
     ChatPrompt,
     EvaluationExample,
     EvaluationPromotion,
+    GuideResponse,
     ReviewRequestCreate,
 )
 from fraudlens.services import add_case_comment, get_case, request_review
+
+
+async def guide(principal: Principal, payload: ChatPrompt) -> GuideResponse:
+    """Product guidance only: no case evidence and no autonomous mutations."""
+    require_role(principal, "analyst", "reviewer", "admin", "executive", "viewer")
+    prompt = validate_user_prompt(payload.content)
+    settings = get_settings()
+    routes = {
+        "upload": "/uploads",
+        "email": "/connectors",
+        "gmail": "/connectors",
+        "investigation": "/cases",
+        "case": "/cases",
+        "review": "/reviews",
+        "workspace": "/workspaces",
+        "subscription": "/billing",
+        "billing": "/billing",
+        "model": "/models",
+    }
+    suggested_path = next((path for word, path in routes.items() if word in prompt.lower()), None)
+    model = "deterministic-guide"
+    answer = (
+        "I can guide you through evidence uploads, email connectors, investigations, human "
+        "review, workspaces, and billing. Open a case for evidence-specific questions."
+    )
+    if settings.llm_provider in {"openai", "groq", "ollama"}:
+        from openai import AsyncOpenAI
+
+        if settings.llm_provider == "openai":
+            key, model, base_url = settings.openai_api_key, settings.openai_model, None
+        elif settings.llm_provider == "groq":
+            key, model, base_url = (
+                settings.groq_api_key,
+                settings.groq_model,
+                settings.groq_base_url,
+            )
+        else:
+            key, model, base_url = (
+                settings.ollama_api_key,
+                settings.ollama_model,
+                settings.ollama_base_url,
+            )
+        client = AsyncOpenAI(api_key=key, base_url=base_url)
+        system = (
+            "You are the FraudLens product guide. Give concise navigation and safe usage help. "
+            "Never claim to inspect evidence, change data, run investigations, make fraud "
+            "decisions, or reveal secrets. Direct evidence questions to the case copilot."
+        )
+        response = await client.chat.completions.create(
+            model=model,
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+            temperature=0,
+        )
+        answer = ensure_grounded_answer(response.choices[0].message.content or "", [])
+    return GuideResponse(content=answer, model=model, suggested_path=suggested_path)
 
 
 def _message(row):

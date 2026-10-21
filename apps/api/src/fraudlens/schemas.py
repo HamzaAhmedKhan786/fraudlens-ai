@@ -209,6 +209,12 @@ class ChatPrompt(BaseModel):
     content: str = Field(min_length=2, max_length=4000)
 
 
+class GuideResponse(BaseModel):
+    content: str
+    model: str
+    suggested_path: str | None = None
+
+
 class ChatMessage(BaseModel):
     id: str
     role: str

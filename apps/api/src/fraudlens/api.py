@@ -12,7 +12,7 @@ from fraudlens.auth import Principal, require_principal
 from fraudlens.billing import checkout, portal, verify_signature
 from fraudlens.config import get_settings as get_runtime_settings
 from fraudlens.copilot import ask as ask_copilot
-from fraudlens.copilot import convert_to_note, list_chat, promote_evaluation
+from fraudlens.copilot import convert_to_note, guide, list_chat, promote_evaluation
 from fraudlens.copilot import feedback as save_copilot_feedback
 from fraudlens.database import SubscriptionRecord, get_session
 from fraudlens.dependencies import get_gmail_connector, get_ingestion_service, get_orchestrator
@@ -60,6 +60,7 @@ from fraudlens.schemas import (
     GmailConnection,
     GmailSyncRequest,
     GmailSyncResult,
+    GuideResponse,
     InvestigationSummary,
     Invitation,
     InvitationAccept,
@@ -108,6 +109,14 @@ from fraudlens.services import (
 )
 
 router = APIRouter()
+
+
+@router.post("/copilot/guide", response_model=GuideResponse)
+async def post_copilot_guide(
+    payload: ChatPrompt,
+    principal: Annotated[Principal, Depends(require_principal)],
+) -> GuideResponse:
+    return await guide(principal, payload)
 
 
 @router.get("/workspaces", response_model=list[WorkspaceSummary])
