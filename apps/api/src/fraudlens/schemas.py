@@ -213,6 +213,7 @@ class GuideResponse(BaseModel):
     content: str
     model: str
     suggested_path: str | None = None
+    citations: list[dict[str, str]] = Field(default_factory=list)
 
 
 class ChatMessage(BaseModel):

@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     ollama_api_key: str = "ollama"
     max_agent_steps: int = Field(default=12, ge=1, le=100)
     agent_timeout_seconds: int = Field(default=30, ge=1, le=300)
+    knowledge_base_path: str = "docs/knowledge-base"
+    knowledge_max_chunks: int = Field(default=4, ge=1, le=10)
+    knowledge_min_relevance: float = Field(default=0.25, ge=0, le=10)
     minimum_citation_coverage: float = Field(default=1.0, ge=0, le=1)
     max_upload_bytes: int = Field(default=52_428_800, ge=1)
     upload_chunk_bytes: int = Field(default=1_048_576, ge=1)

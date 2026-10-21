@@ -9,6 +9,7 @@ COPY apps/api/pyproject.toml .
 COPY apps/api/src ./src
 COPY apps/api/alembic.ini ./alembic.ini
 COPY apps/api/migrations ./migrations
+COPY docs/knowledge-base ./docs/knowledge-base
 COPY apps/api/entrypoint.sh ./entrypoint.sh
 RUN pip install --no-cache-dir .
 RUN chmod +x ./entrypoint.sh
