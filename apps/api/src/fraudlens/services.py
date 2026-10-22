@@ -342,6 +342,7 @@ async def update_workspace_settings(
 async def create_case(
     session: AsyncSession, principal: Principal, payload: CaseCreate
 ) -> CaseSummary:
+    require_role(principal, "analyst", "admin")
     if payload.tenant_id != principal.tenant_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant mismatch")
     if await session.get(CaseRecord, payload.id):
@@ -383,6 +384,7 @@ async def add_evidence(
     case_id: str,
     payload: EvidenceCreate,
 ) -> Evidence:
+    require_role(principal, "analyst", "reviewer", "admin")
     case = await get_case(session, principal, case_id)
     if await session.get(EvidenceRecord, payload.id):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Evidence already exists")
@@ -407,6 +409,7 @@ async def investigate_case(
     case_id: str,
     orchestrator: InvestigationOrchestrator,
 ):
+    require_role(principal, "analyst", "admin")
     case = await get_case(session, principal, case_id)
     active_evidence = [item for item in case.evidence if item.deleted_at is None]
     if not active_evidence:
@@ -655,12 +658,14 @@ async def dashboard(session: AsyncSession, principal: Principal) -> DashboardMet
     )
 
 
-async def audit_log(session: AsyncSession, principal: Principal) -> list[AuditEntry]:
+async def audit_log(
+    session: AsyncSession, principal: Principal, resource_id: str | None = None
+) -> list[AuditEntry]:
+    filters = [AuditRecord.tenant_id == principal.tenant_id]
+    if resource_id:
+        filters.append(AuditRecord.resource_id == resource_id)
     rows = await session.scalars(
-        select(AuditRecord)
-        .where(AuditRecord.tenant_id == principal.tenant_id)
-        .order_by(AuditRecord.created_at.desc())
-        .limit(100)
+        select(AuditRecord).where(*filters).order_by(AuditRecord.created_at.desc()).limit(100)
     )
     return [
         AuditEntry(
@@ -681,7 +686,7 @@ async def list_investigations(
     rows = await session.scalars(
         select(InvestigationRecord)
         .join(CaseRecord)
-        .where(CaseRecord.tenant_id == principal.tenant_id)
+        .where(CaseRecord.tenant_id == principal.tenant_id, CaseRecord.deleted_at.is_(None))
         .order_by(InvestigationRecord.created_at.desc())
         .limit(100)
     )

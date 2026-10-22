@@ -2,19 +2,27 @@ from datetime import UTC, datetime, timedelta
 from html import escape
 from pathlib import Path
 from shutil import which
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from fraudlens.auth import Principal, require_principal
+from fraudlens.analytics import overview, search_cases
+from fraudlens.auth import Principal, require_principal, require_role
 from fraudlens.billing import checkout, portal, verify_signature
 from fraudlens.config import get_settings as get_runtime_settings
 from fraudlens.copilot import ask as ask_copilot
 from fraudlens.copilot import convert_to_note, guide, list_chat, promote_evaluation
 from fraudlens.copilot import feedback as save_copilot_feedback
-from fraudlens.database import SubscriptionRecord, get_session
+from fraudlens.database import (
+    AuditRecord,
+    MembershipRecord,
+    OrganizationRecord,
+    SubscriptionRecord,
+    get_session,
+)
 from fraudlens.dependencies import get_gmail_connector, get_ingestion_service, get_orchestrator
 from fraudlens.domain.models import InvestigationReport, InvestigationRequest
 from fraudlens.gmail import GmailConnector
@@ -60,6 +68,8 @@ from fraudlens.schemas import (
     GmailConnection,
     GmailSyncRequest,
     GmailSyncResult,
+    GuideFeedback,
+    GuidePrompt,
     GuideResponse,
     InvestigationSummary,
     Invitation,
@@ -113,10 +123,76 @@ router = APIRouter()
 
 @router.post("/copilot/guide", response_model=GuideResponse)
 async def post_copilot_guide(
-    payload: ChatPrompt,
+    payload: GuidePrompt,
     principal: Annotated[Principal, Depends(require_principal)],
 ) -> GuideResponse:
     return await guide(principal, payload)
+
+
+@router.post("/copilot/guide/feedback", status_code=201)
+async def post_guide_feedback(
+    payload: GuideFeedback,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+):
+    session.add(
+        AuditRecord(
+            tenant_id=principal.tenant_id,
+            actor=principal.subject,
+            action="guide.feedback",
+            resource_id="product-guide",
+            payload=payload.model_dump(),
+        )
+    )
+    await session.commit()
+    return {"saved": True}
+
+
+@router.get("/session")
+async def current_session(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+):
+    membership = await session.scalar(
+        select(MembershipRecord).where(
+            MembershipRecord.tenant_id == principal.tenant_id,
+            MembershipRecord.subject == principal.subject,
+            MembershipRecord.status == "ACTIVE",
+        )
+    )
+    organization = await session.get(OrganizationRecord, principal.tenant_id)
+    return {
+        "name": membership.email if membership else principal.subject,
+        "roles": sorted(principal.roles),
+        "tenant_id": principal.tenant_id,
+        "workspace": organization.name if organization else principal.tenant_id,
+        "development": not get_runtime_settings().oidc_enabled,
+    }
+
+
+@router.get("/analytics/overview")
+async def get_analytics(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+    days: int = Query(default=7, ge=7, le=90),
+):
+    if days not in {7, 30, 90}:
+        raise HTTPException(422, "Select a 7, 30, or 90 day period")
+    return await overview(session, principal, days)
+
+
+@router.get("/cases/search")
+async def get_case_search(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    principal: Annotated[Principal, Depends(require_principal)],
+    q: str = Query(default="", max_length=240),
+    severity: Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"] | None = None,
+    status: Literal["OPEN", "UNDER_REVIEW", "ESCALATED", "RESOLVED"] | None = None,
+    sort: Literal["updated", "risk", "created", "subject"] = "updated",
+    page: int = Query(default=1, ge=1, le=100000),
+    page_size: int = Query(default=10, ge=1, le=50),
+):
+    return await search_cases(session, principal, q, severity, status, sort, page, page_size)
 
 
 @router.get("/workspaces", response_model=list[WorkspaceSummary])
@@ -458,8 +534,11 @@ async def health() -> dict[str, str]:
 async def investigate(
     request: InvestigationRequest,
     orchestrator: Annotated[InvestigationOrchestrator, Depends(get_orchestrator)],
-    _: Annotated[Principal, Depends(require_principal)],
+    principal: Annotated[Principal, Depends(require_principal)],
 ) -> InvestigationReport:
+    require_role(principal, "analyst", "admin")
+    if request.tenant_id != principal.tenant_id:
+        raise HTTPException(403, "Tenant mismatch")
     return await orchestrator.investigate(request)
 
 
@@ -619,8 +698,9 @@ async def run_case_investigation(
 async def get_audit_log(
     session: Annotated[AsyncSession, Depends(get_session)],
     principal: Annotated[Principal, Depends(require_principal)],
+    resource_id: str | None = Query(default=None, max_length=100),
 ) -> list[AuditEntry]:
-    return await audit_log(session, principal)
+    return await audit_log(session, principal, resource_id)
 
 
 @router.get("/investigations", response_model=list[InvestigationSummary])

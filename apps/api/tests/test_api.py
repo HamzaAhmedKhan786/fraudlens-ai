@@ -19,6 +19,17 @@ def test_health_is_public_and_dashboard_is_protected() -> None:
         assert client.get("/api/v1/dashboard", headers=HEADERS).status_code == 200
 
 
+def test_console_analytics_require_auth_and_validate_filters() -> None:
+    with TestClient(app) as client:
+        for path in ("/api/v1/analytics/overview", "/api/v1/cases/search", "/api/v1/session"):
+            assert client.get(path).status_code == 401
+            assert client.get(path, headers={**HEADERS, "X-Roles": "viewer"}).status_code == 200
+        assert client.get("/api/v1/analytics/overview?days=8", headers=HEADERS).status_code == 422
+        assert (
+            client.get("/api/v1/cases/search?severity=INVALID", headers=HEADERS).status_code == 422
+        )
+
+
 def test_persistent_case_workflow_is_tenant_scoped_and_audited() -> None:
     suffix = uuid4().hex[:8]
     case_id = f"TEST-{suffix}"

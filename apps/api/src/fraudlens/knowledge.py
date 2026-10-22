@@ -87,7 +87,9 @@ def load_knowledge(path_value: str) -> tuple[KnowledgeChunk, ...]:
     return tuple(chunk for chunk in chunks if chunk.content)
 
 
-def retrieve_knowledge(query: str, principal: Principal) -> list[KnowledgeChunk]:
+def retrieve_knowledge(
+    query: str, principal: Principal, current_path: str | None = None
+) -> list[KnowledgeChunk]:
     settings = get_settings()
     query_tokens = set(TOKEN.findall(query.lower()))
     if not query_tokens:
@@ -102,6 +104,8 @@ def retrieve_knowledge(query: str, principal: Principal) -> list[KnowledgeChunk]
         score = 2 * len(query_tokens & heading_tokens) + len(query_tokens & body_tokens)
         score /= max(len(query_tokens), 1)
         if score >= settings.knowledge_min_relevance:
+            if current_path and chunk.route == current_path:
+                score += 0.35
             ranked.append((score, chunk))
     ranked.sort(key=lambda item: (-item[0], item[1].document_id, item[1].section))
     return [chunk for _, chunk in ranked[: settings.knowledge_max_chunks]]

@@ -34,7 +34,7 @@ async def guide(principal: Principal, payload: ChatPrompt) -> GuideResponse:
     require_role(principal, "analyst", "reviewer", "admin", "executive", "viewer")
     prompt = validate_user_prompt(payload.content)
     settings = get_settings()
-    chunks = retrieve_knowledge(prompt, principal)
+    chunks = retrieve_knowledge(prompt, principal, getattr(payload, "current_path", None))
     citation_ids = [f"{chunk.document_id}#{chunk.section}" for chunk in chunks]
     citations = [
         {
@@ -107,7 +107,11 @@ async def guide(principal: Principal, payload: ChatPrompt) -> GuideResponse:
         content=answer,
         model=model,
         suggested_path=suggested_path,
-        citations=citations,
+        citations=[
+            citation
+            for citation, citation_id in zip(citations, citation_ids, strict=True)
+            if f"[{citation_id}]" in answer
+        ],
     )
 
 

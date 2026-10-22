@@ -209,6 +209,16 @@ class ChatPrompt(BaseModel):
     content: str = Field(min_length=2, max_length=4000)
 
 
+class GuidePrompt(ChatPrompt):
+    current_path: str | None = Field(default=None, max_length=200, pattern=r"^/[a-zA-Z0-9/_-]*$")
+
+
+class GuideFeedback(BaseModel):
+    helpful: bool
+    document_ids: list[str] = Field(default_factory=list, max_length=10)
+    revisions: list[str] = Field(default_factory=list, max_length=10)
+
+
 class GuideResponse(BaseModel):
     content: str
     model: str
