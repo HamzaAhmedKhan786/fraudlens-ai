@@ -8,6 +8,16 @@
 - Models: deterministic agents always first; optional OpenAI, Groq, or Ollama; remote video adapter.
 - Active migrations are linear. Never edit real `.env`, expose secrets, or create fake successes.
 
+## Enterprise console
+
+- All workspace pages share the same responsive navigation and route-aware help drawer.
+- `/analytics/overview` uses bounded SQL aggregates; `/cases/search` provides server pagination.
+- Design tokens and Tailwind primitives live alongside existing styles in `enterprise.css`.
+- The world basemap is locally packaged World Atlas data, rendered with D3 Geo/TopoJSON.
+  Country selection and zoom do not imply fraud observations. Risk markers require verified
+  location records; keep the risk layer inactive when those records are unavailable.
+- Read `docs/UI_REDESIGN.md` for feature inventory, data semantics and verification notes.
+
 ## Core invariants
 
 1. Every case/evidence/chat/review/billing query is tenant-scoped.
