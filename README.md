@@ -12,15 +12,23 @@
 
 ### Product screenshots
 
-| Dashboard | Evidence intake |
-| --- | --- |
-| ![Fraud operations dashboard](screenshots/01-dashboard.jpg) | ![Secure evidence intake](screenshots/02-evidence-intake.jpg) |
+### Command center
 
-| Case workflow | Detection policies |
-| --- | --- |
-| ![Analyst case workflow](screenshots/03-case-workflow.jpg) | ![Detection policy management](screenshots/04-detection-policies.jpg) |
+![FraudLens AI command center](screenshots/enterprise-redesign/dashboard-desktop.jpg)
 
-![Workspace settings](screenshots/05-workspace-settings.jpg)
+Display preview from the running application using isolated synthetic test data, not customer
+emails or production fraud statistics. Geographic risk markers remain inactive until verified
+location data is available.
+
+| Risk analytics | Documentation assistant |
+| --- | --- |
+| ![Interactive world basemap and risk analytics](screenshots/enterprise-redesign/world-map-desktop.jpg) | ![Cited product documentation assistant](screenshots/enterprise-redesign/documentation-assistant.jpg) |
+
+| Investigation workspace | Mobile command center |
+| --- | --- |
+| ![Investigation findings and evidence](screenshots/enterprise-redesign/investigation-workspace.jpg) | ![Responsive command center](screenshots/enterprise-redesign/dashboard-mobile.jpg) |
+
+[Screenshot gallery](screenshots/enterprise-redesign/) · [Remaining work and activation gates](docs/REMAINING_WORK.md)
 
 The repository now contains an executable enterprise foundation:
 
