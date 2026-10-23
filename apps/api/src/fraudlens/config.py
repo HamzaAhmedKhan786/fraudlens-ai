@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     oidc_issuer: str | None = None
     oidc_audience: str | None = None
     oidc_jwks_url: str | None = None
+    oidc_algorithm: str = "RS256"
     oidc_tenant_claim: str = "tenant_id"
     oidc_roles_claim: str = "roles"
     microsoft_client_id: str | None = None
@@ -102,6 +103,8 @@ class Settings(BaseSettings):
             (self.oidc_issuer, self.oidc_audience, self.oidc_jwks_url)
         ):
             raise ValueError("OIDC_ISSUER, OIDC_AUDIENCE and OIDC_JWKS_URL are required")
+        if self.oidc_algorithm not in {"RS256", "ES256"}:
+            raise ValueError("OIDC_ALGORITHM must be RS256 or ES256")
         if self.stripe_enabled and not all((self.stripe_secret_key, self.stripe_webhook_secret)):
             raise ValueError("Stripe keys are required when STRIPE_ENABLED=true")
         if self.stripe_enabled and not self.stripe_secret_key.startswith("sk_test_"):

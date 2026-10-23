@@ -1,13 +1,23 @@
 import "server-only";
 import { cookies } from "next/headers";
+import { getAuth0, isAuth0Configured } from "./auth0";
 
 export const backendBaseUrl = process.env.FRAUDLENS_API_URL ?? "http://127.0.0.1:8000/api/v1";
 const apiKey = process.env.FRAUDLENS_API_KEY ?? "fraudlens-local-dev-key";
 
 export async function backendAuthHeaders(): Promise<Record<string, string>> {
-  const token=(await cookies()).get("fraudlens_session")?.value;
   const workspace=(await cookies()).get("fraudlens_workspace")?.value;
+  if (isAuth0Configured()) {
+    try {
+      const { token } = await getAuth0().getAccessToken();
+      return { Authorization: `Bearer ${token}`, ...(workspace ? { "X-Workspace-ID": workspace } : {}) };
+    } catch {
+      return {};
+    }
+  }
+  const token=(await cookies()).get("fraudlens_session")?.value;
   if(token)return {Authorization:`Bearer ${token}`,...(workspace?{"X-Workspace-ID":workspace}:{})};
+  if (process.env.OIDC_ENABLED === "true") return {};
   return { "X-API-Key": apiKey, "X-Tenant-ID": "demo", "X-Actor": "web-console", "X-Roles": "analyst,reviewer,admin" };
 }
 

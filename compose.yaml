@@ -83,6 +83,13 @@ services:
       GOOGLE_GMAIL_SCOPES: ${GOOGLE_GMAIL_SCOPES:-https://www.googleapis.com/auth/gmail.readonly}
       OAUTH_STATE_TTL_SECONDS: ${OAUTH_STATE_TTL_SECONDS:-600}
       GOOGLE_TOKEN_ENCRYPTION_KEY: ${GOOGLE_TOKEN_ENCRYPTION_KEY:-}
+      OIDC_ENABLED: ${OIDC_ENABLED:-false}
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:-}
+      OIDC_JWKS_URL: ${OIDC_JWKS_URL:-}
+      OIDC_ALGORITHM: ${OIDC_ALGORITHM:-RS256}
+      OIDC_TENANT_CLAIM: ${OIDC_TENANT_CLAIM:-https://fraudlens.example/tenant_id}
+      OIDC_ROLES_CLAIM: ${OIDC_ROLES_CLAIM:-https://fraudlens.example/roles}
       OCR_ENABLED: ${OCR_ENABLED:-true}
       OCR_LANGUAGES: ${OCR_LANGUAGES:-eng+deu+spa+ita+urd+fra+ara}
       TESSERACT_CMD: tesseract
@@ -148,6 +155,15 @@ services:
     environment:
       FRAUDLENS_API_URL: http://api:8000/api/v1
       FRAUDLENS_API_KEY: ${API_KEY:-fraudlens-compose-dev-key}
+      OIDC_ENABLED: ${OIDC_ENABLED:-false}
+      AUTH0_DOMAIN: ${AUTH0_DOMAIN:-}
+      AUTH0_CLIENT_ID: ${AUTH0_CLIENT_ID:-}
+      AUTH0_CLIENT_SECRET: ${AUTH0_CLIENT_SECRET:-}
+      AUTH0_SECRET: ${AUTH0_SECRET:-}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+      AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:-}
+      AUTH0_SCOPE: ${AUTH0_SCOPE:-openid profile email offline_access}
+      OIDC_RECOVERY_URL: ${OIDC_RECOVERY_URL:-}
     ports: ["3000:3000"]
     depends_on: [api]
 
