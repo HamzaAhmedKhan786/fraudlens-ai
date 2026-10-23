@@ -46,7 +46,7 @@ export type PolicyDefinition = { id: string; name: string; version: string; enab
 export type ModelHealth = { id: string; name: string; provider: string; status: string; latency_ms: number | null; last_checked: string; detail: string };
 export type AuditEntry = { id: string; actor: string; action: string; resource_id: string; payload: Record<string, unknown>; created_at: string };
 export type EntityGraph = { nodes: { id: string; label: string; kind: string; risk: number }[]; edges: { source: string; target: string; relation: string }[] };
-export type CaseDetail = CaseSummary & { evidence: { id: string; kind: string; source: string; attributes: Record<string, unknown>; sha256?: string | null }[]; comments: { id: string; author: string; body: string; created_at: string }[]; latest_report: { summary: string; citations: string[]; risk: { score: number; severity: string }; findings: { id: string; title: string; explanation: string; confidence: number; severity: string; evidence_ids: string[] }[] } | null };
+export type CaseDetail = CaseSummary & { evidence: { id: string; kind: string; source: string; attributes: Record<string, unknown>; sha256?: string | null }[]; comments: { id: string; author: string; body: string; created_at: string }[]; latest_report: { summary: string; citations: string[]; risk: { score: number; severity: string }; agent_trace: { agent: string; status: string; duration_ms: number; finding_count: number }[]; findings: { id: string; title: string; explanation: string; confidence: number; severity: string; evidence_ids: string[] }[] } | null };
 export type WorkspaceSettings = { mandatory_human_review: boolean; llm_narrative_enabled: boolean; critical_risk_threshold: number; evidence_retention_days: number; updated_at: string | null };
 export type UploadSummary = { id: string; case_id: string; filename: string; declared_content_type: string | null; detected_content_type: string; size_bytes: number; sha256: string; status: string; scan_status: string; processing_attempts: number; extracted: Record<string, unknown>; error: string | null; object_available: boolean; retention_expires_at: string; metadata_expires_at: string; created_at: string; updated_at: string };
 export type UploadList = { items: UploadSummary[]; total: number };
@@ -63,6 +63,7 @@ export type ChatMessage = { id:string; role:string; content:string; citations:st
 export async function backendFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${backendBaseUrl}${path}`, {
     ...init,
+    signal: init.signal ?? AbortSignal.timeout(15000),
     cache: "no-store",
     headers: {
       "Content-Type": "application/json",

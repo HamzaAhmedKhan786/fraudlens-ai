@@ -1,10 +1,11 @@
-import { backendFetch, type CaseSummary } from "@/lib/backend";
-import { CasesTable } from "../ui/cases-table";
-import { SectionHeader, WorkspaceShell } from "../ui/workspace-shell";
+import { backendFetch } from "@/lib/backend";
+import type { CasePage } from "@/lib/analytics-types";
+import { CaseSearchTable } from "../ui/case-search-table";
 import { NewInvestigationButton } from "../ui/new-investigation";
+import { SectionHeader, WorkspaceShell } from "../ui/workspace-shell";
 
-export default async function CasesPage() {
-  const cases = await backendFetch<CaseSummary[]>("/cases").catch(() => []);
-  return <WorkspaceShell><div className="content section-page"><SectionHeader eyebrow="CASE MANAGEMENT" title="Fraud cases" description="Triage and investigate evidence across all supported modalities." action={<NewInvestigationButton />}/><CasesTable cases={cases}/></div></WorkspaceShell>;
+export default async function CasesPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+  const { q = "" } = await searchParams;
+  const data = await backendFetch<CasePage>(`/cases/search?q=${encodeURIComponent(q)}`).catch(() => null);
+  return <WorkspaceShell><div className="content section-page"><SectionHeader eyebrow="CASE MANAGEMENT" title="Your investigations, in focus" description="Track evidence, assess deterministic risk, and collaborate on every decision." action={<NewInvestigationButton/>}/><CaseSearchTable initial={data} initialQuery={q}/></div></WorkspaceShell>;
 }
-

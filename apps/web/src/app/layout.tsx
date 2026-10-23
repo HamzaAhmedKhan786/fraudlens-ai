@@ -1,4 +1,5 @@
 import "@fontsource-variable/inter";
+import "./tailwind.css";
 import "./styles.css";
 import "./workspace.css";
 import "./ingestion.css";
@@ -8,6 +9,8 @@ import "./intelligence.css";
 import "./connectors.css";
 import "./investigation.css";
 import "./pricing.css";
+import "./enterprise.css";
+import { GuidanceCopilot } from "./ui/guidance-copilot";
 
 export const metadata = {
   title: "FraudLens AI | Investigation Console",
@@ -17,7 +20,7 @@ export const metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>{children}<GuidanceCopilot/></body>
     </html>
   );
 }

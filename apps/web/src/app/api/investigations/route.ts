@@ -12,11 +12,12 @@ export async function POST(request: Request) {
   const suffix = `${Date.now().toString(36)}${crypto.randomUUID().slice(0, 4)}`.toUpperCase();
   const caseId = `FR-${suffix}`;
   try {
+    const identity = await backendFetch<{ tenant_id: string }>("/session");
     const created = await backendFetch<CaseSummary>("/cases", {
       method: "POST",
       body: JSON.stringify({
         id: caseId,
-        tenant_id: "demo",
+        tenant_id: identity.tenant_id,
         subject,
         case_type: caseType,
         analysis_modules: payload.analysis_modules ?? [],

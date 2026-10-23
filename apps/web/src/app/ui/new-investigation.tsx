@@ -2,7 +2,7 @@
 
 import { Sparkles, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 
 const templates = [
   { id: "phishing", label: "Email phishing & spoofing", type: "Email phishing", title: "Suspicious email investigation" },
@@ -38,6 +38,11 @@ export function NewInvestigationButton() {
   const [selectedSources, setSelectedSources] = useState<string[]>(["File upload"]);
   const [state, setState] = useState<"idle" | "running" | "failed">("idle");
   const [message, setMessage] = useState("");
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (open) dialog.current?.showModal();
+    else dialog.current?.close();
+  }, [open]);
 
   function choose(value: string) {
     const next = templates.find(item => item.id === value) ?? templates[0];
@@ -49,18 +54,22 @@ export function NewInvestigationButton() {
 
   async function launch(event: FormEvent) {
     event.preventDefault(); setState("running"); setMessage("");
-    const response = await fetch("/api/investigations", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ subject, case_type: caseType, analysis_modules: selectedModules, evidence_sources: selectedSources }),
-    });
-    const body = await response.json();
-    if (!response.ok) { setState("failed"); setMessage(body.detail ?? "Case creation failed"); return; }
-    setState("idle"); setOpen(false); router.push(`/cases/${body.case.id}`); router.refresh();
+    try {
+      const response = await fetch("/api/investigations", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subject, case_type: caseType, analysis_modules: selectedModules, evidence_sources: selectedSources }),
+      });
+      const body = await response.json();
+      if (!response.ok) { setState("failed"); setMessage(body.detail ?? "Case creation failed"); return; }
+      setState("idle"); setOpen(false); router.push(`/cases/${body.case.id}`); router.refresh();
+    } catch {
+      setState("failed"); setMessage("Case creation could not be confirmed. Check your connection and case list before retrying.");
+    }
   }
 
   return <>
     <button className="primary" onClick={() => setOpen(true)}><Sparkles size={16}/>New investigation</button>
-    {open && <div className="investigation-overlay" role="presentation" onMouseDown={() => state !== "running" && setOpen(false)}>
+    {open && <dialog ref={dialog} className="investigation-overlay" aria-label="Create a new investigation" onCancel={event => { if (state === "running") event.preventDefault(); else setOpen(false); }} onMouseDown={event => { if (event.target === event.currentTarget && state !== "running") setOpen(false); }}>
       <form className="investigation-dialog panel" onSubmit={launch} onMouseDown={event => event.stopPropagation()}>
         <header><div><span className="eyebrow">NEW CASE</span><h2>Choose an investigation</h2><p>Create an empty case, then add Gmail, uploaded, or API evidence.</p></div><button type="button" onClick={() => setOpen(false)} aria-label="Close"><X size={17}/></button></header>
         <div className="investigation-options">{templates.map(item => <button type="button" className={template === item.id ? "selected" : ""} onClick={() => choose(item.id)} key={item.id}>{item.label}</button>)}</div>
@@ -68,6 +77,6 @@ export function NewInvestigationButton() {
         <div className="investigation-config"><section><h3>Evidence sources</h3>{sources.map(source => <label key={source}><input type="checkbox" checked={selectedSources.includes(source)} onChange={() => toggle(source, selectedSources, setSelectedSources)}/><span>{source}</span></label>)}</section><section><h3>Analysis modules</h3>{modules.map(([id,label,status]) => <label key={id} className={status === "Coming Soon" ? "unavailable" : ""}><input type="checkbox" disabled={status === "Coming Soon"} checked={selectedModules.includes(id)} onChange={() => toggle(id, selectedModules, setSelectedModules)}/><span>{label}<em>{status}</em></span></label>)}</section></div>
         <div className="form-actions"><button className="primary" disabled={state === "running"}>{state === "running" ? "Creating…" : "Create case"}</button><span className={state === "failed" ? "form-error" : ""}>{message}</span></div>
       </form>
-    </div>}
+    </dialog>}
   </>;
 }
